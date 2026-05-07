@@ -1,11 +1,2 @@
 #安装模块
-pywin32
-PyQt5
-opencv-python
-numpy
-Pillow
-pydirectinput
-keyboard
-mouse
-pygame
-windows-capture
+pip install PyQt5 opencv-python numpy Pillow pywin32 pydirectinput keyboard mouse pygame dxcam pyinstaller
