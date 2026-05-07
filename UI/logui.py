@@ -1,3 +1,5 @@
+#logui.py
+#Github\NTE_boheAI\UI\logui.py
 import logging
 from logging.handlers import RotatingFileHandler
 import sys

@@ -1,0 +1,8 @@
+图片路径D:\Github\NTE_boheAI\core\task\Taskimages
+不要用绝对路径,打包需要
+#区域 1606,37,1665,87找 taks_auto_play.bmp  日志输出:当前任务对话中
+进入循环
+找到taks_auto_play.bmp 和disable_skip.bmp 按空格 延迟0.5  日志输出:当前对话无法跳过 自动对话中
+
+区域 1811,15,1876,96 找到 disable_skip.bmp 按F 延迟1秒
+区域 1822,25,1889,98找到  skip_btn.bmp 按esc 延迟0.5秒

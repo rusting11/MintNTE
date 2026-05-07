@@ -1,6 +1,11 @@
+#logViewerUI.py
+#Github\NTE_boheAI\UI\logViewerUI.py
+
 import os
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTextEdit
 from PyQt5.QtCore import QTimer
+from PyQt5.QtGui import QIcon
+import config
 
 class LogViewer(QWidget):
     def __init__(self, log_file="nte_bohe.log", parent=None):
@@ -8,6 +13,10 @@ class LogViewer(QWidget):
         self.log_file = log_file
         self.setWindowTitle("运行日志")
         self.resize(600, 400)
+        try:
+            if hasattr(config, 'TITLE_LOGO_PATH') and os.path.exists(str(config.TITLE_LOGO_PATH)):
+                self.setWindowIcon(QIcon(str(config.TITLE_LOGO_PATH)))
+        except: pass
 
         self.setStyleSheet("""
             QWidget {

@@ -1,4 +1,3 @@
-# updater/updater.py
 import os
 import sys
 import hashlib
@@ -9,15 +8,43 @@ import tempfile
 import zipfile
 import shutil
 import subprocess
-import threading
 import re
-from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, pyqtSignal, QThread
 
-GITHUB_REPO = "daoqi/NTE-ai"
+GITHUB_REPO = "daoqi/MintNTE"
 API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 LOCAL_VERSION_FILE = "version.txt"
 
-class Updater(QObject):
+
+class CheckUpdateThread(QThread):
+    finished = pyqtSignal(bool, str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._cancel = False
+
+    def cancel(self):
+        self._cancel = True
+        self.wait(2000)
+
+    def run(self):
+        if self._cancel:
+            return
+        local = Updater.get_local_version_static()
+        try:
+            req = urllib.request.Request(API_URL, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+            remote_tag = data.get("tag_name", "0.0.0").lstrip("v")
+            needs_update = local != remote_tag
+            if not self._cancel:
+                self.finished.emit(needs_update, remote_tag)
+        except Exception:
+            if not self._cancel:
+                self.finished.emit(False, "")
+
+
+class DownloadUpdateThread(QThread):
     progress = pyqtSignal(int)
     status = pyqtSignal(str)
     finished = pyqtSignal(bool, str)
@@ -25,109 +52,76 @@ class Updater(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._cancel = False
-        self._valid = True          # 标记对象是否有效，防止线程访问已销毁的对象
-        self._thread = None
 
     def cancel(self):
         self._cancel = True
-        self._valid = False         # 无效化，线程看到后不再发送信号
+        self.wait(2000)
 
-    def get_local_version(self):
-        if not os.path.exists(LOCAL_VERSION_FILE):
-            return "0.0.0"
-        with open(LOCAL_VERSION_FILE, "r", encoding="utf-8") as f:
-            return f.read().strip()
+    def run(self):
+        self.status.emit("正在获取最新版本...")
+        try:
+            req = urllib.request.Request(API_URL, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+        except Exception as e:
+            if not self._cancel:
+                self.status.emit(f"获取版本失败: {e}")
+                self.finished.emit(False, "")
+            return
 
-    def check_for_update(self):
-        def run():
-            if not self._valid:
-                return
-            self.status.emit("正在检查更新...")
-            local = self.get_local_version()
-            try:
-                req = urllib.request.Request(API_URL, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    data = json.loads(resp.read().decode())
-                remote_tag = data.get("tag_name", "0.0.0").lstrip("v")
-                needs_update = local != remote_tag
-                if self._valid:
-                    self.finished.emit(needs_update, remote_tag)
-            except Exception as e:
-                if self._valid:
-                    self.status.emit(f"检查更新失败: {e}")
-                    self.finished.emit(False, "")
-        threading.Thread(target=run, daemon=True).start()
+        if self._cancel: return
+        assets = data.get("assets", [])
+        if not assets:
+            self.status.emit("没有可下载的更新包")
+            self.finished.emit(False, "")
+            return
 
-    def perform_update(self):
-        def run():
-            if not self._valid:
-                return
-            self.status.emit("正在获取最新版本...")
-            try:
-                req = urllib.request.Request(API_URL, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    data = json.loads(resp.read().decode())
-            except Exception as e:
-                if self._valid:
-                    self.status.emit(f"获取版本失败: {e}")
-                    self.finished.emit(False, "")
-                return
+        zip_asset = next((a for a in assets if a["name"].endswith(".zip")), None)
+        if not zip_asset:
+            self.status.emit("未找到 .zip 更新包")
+            self.finished.emit(False, "")
+            return
 
-            if not self._valid:
-                return
-            assets = data.get("assets", [])
-            if not assets:
-                self.status.emit("没有可下载的更新包")
+        download_url = zip_asset["browser_download_url"]
+        body = data.get("body", "")
+        expected_sha256 = None
+        match = re.search(r'(?i)sha256[:\s]+([a-fA-F0-9]{64})', body)
+        if match:
+            expected_sha256 = match.group(1).lower()
+
+        self.status.emit("正在下载更新包...")
+        tmp_dir = tempfile.mkdtemp()
+        zip_path = os.path.join(tmp_dir, "update.zip")
+        if not self._download_file(download_url, zip_path):
+            if not self._cancel:
+                self.status.emit("下载失败或已取消")
+                self.finished.emit(False, "")
+            return
+
+        if expected_sha256:
+            self.status.emit("正在校验文件...")
+            self.progress.emit(0)
+            actual_sha = self._sha256_file(zip_path)
+            if actual_sha != expected_sha256:
+                self.status.emit(f"SHA256 不匹配！\n期望: {expected_sha256[:16]}...\n实际: {actual_sha[:16]}...")
                 self.finished.emit(False, "")
                 return
+            self.status.emit("文件校验通过 ✓")
 
-            zip_asset = next((a for a in assets if a["name"].endswith(".zip")), None)
-            if not zip_asset:
-                self.status.emit("未找到 .zip 更新包")
-                self.finished.emit(False, "")
-                return
+        self.status.emit("正在解压...")
+        extract_dir = os.path.join(tmp_dir, "extracted")
+        os.makedirs(extract_dir, exist_ok=True)
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                zf.extractall(extract_dir)
+        except Exception as e:
+            self.status.emit(f"解压失败: {e}")
+            self.finished.emit(False, "")
+            return
 
-            download_url = zip_asset["browser_download_url"]
-            body = data.get("body", "")
-            expected_sha256 = None
-            match = re.search(r'(?i)sha256[:\s]+([a-fA-F0-9]{64})', body)
-            if match:
-                expected_sha256 = match.group(1).lower()
-
-            self.status.emit("正在下载更新包...")
-            tmp_dir = tempfile.mkdtemp()
-            zip_path = os.path.join(tmp_dir, "update.zip")
-            if not self._download_file(download_url, zip_path):
-                if self._valid:
-                    self.status.emit("下载失败或已取消")
-                    self.finished.emit(False, "")
-                return
-
-            if expected_sha256:
-                self.status.emit("正在校验文件...")
-                self.progress.emit(0)
-                actual_sha = self._sha256_file(zip_path)
-                if actual_sha != expected_sha256:
-                    self.status.emit(f"SHA256 不匹配！\n期望: {expected_sha256[:16]}...\n实际: {actual_sha[:16]}...")
-                    self.finished.emit(False, "")
-                    return
-                self.status.emit("文件校验通过 ✓")
-
-            self.status.emit("正在解压...")
-            extract_dir = os.path.join(tmp_dir, "extracted")
-            os.makedirs(extract_dir, exist_ok=True)
-            try:
-                with zipfile.ZipFile(zip_path, 'r') as zf:
-                    zf.extractall(extract_dir)
-            except Exception as e:
-                self.status.emit(f"解压失败: {e}")
-                self.finished.emit(False, "")
-                return
-
-            # 生成辅助更新脚本
-            app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            helper_path = os.path.join(tmp_dir, "updater_helper.py")
-            helper_code = f'''
+        app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        helper_path = os.path.join(tmp_dir, "updater_helper.py")
+        helper_code = f'''
 import os, sys, time, shutil
 
 old_root = r"{app_root}"
@@ -155,16 +149,12 @@ if os.path.exists(version_src):
 
 os.execl(sys.executable, sys.executable, main_script)
 '''
-            with open(helper_path, "w", encoding="utf-8") as f:
-                f.write(helper_code)
+        with open(helper_path, "w", encoding="utf-8") as f:
+            f.write(helper_code)
 
-            self.status.emit("即将退出并更新...")
-            creation_flags = subprocess.DETACHED_PROCESS if sys.platform == "win32" else 0
-            subprocess.Popen([sys.executable, helper_path], creationflags=creation_flags)
-            sys.exit(0)
-
-        self._thread = threading.Thread(target=run, daemon=True)
-        self._thread.start()
+        self.status.emit("即将退出并更新...")
+        self.finished.emit(True, "")
+        return
 
     def _download_file(self, url, dest):
         try:
@@ -174,29 +164,69 @@ os.execl(sys.executable, sys.executable, main_script)
                 downloaded = 0
                 with open(dest, "wb") as f:
                     while True:
-                        if self._cancel:
-                            return False
-                        chunk = resp.read(1024 * 8)
-                        if not chunk:
-                            break
+                        if self._cancel: return False
+                        chunk = resp.read(8192)
+                        if not chunk: break
                         f.write(chunk)
                         downloaded += len(chunk)
                         if total > 0:
-                            pct = int(downloaded / total * 100)
-                            self.progress.emit(pct)
-                            self.status.emit(f"正在下载... {pct}%")
+                            self.progress.emit(int(downloaded / total * 100))
                 self.progress.emit(100)
                 return True
-        except Exception as e:
-            self.status.emit(f"下载出错: {e}")
+        except Exception:
             return False
 
-    def _sha256_file(self, filepath):
+    @staticmethod
+    def _sha256_file(filepath):
         sha = hashlib.sha256()
         with open(filepath, "rb") as f:
             while True:
                 chunk = f.read(8192)
-                if not chunk:
-                    break
+                if not chunk: break
                 sha.update(chunk)
         return sha.hexdigest()
+
+
+class Updater(QObject):
+    progress = pyqtSignal(int)
+    status = pyqtSignal(str)
+    finished = pyqtSignal(bool, str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._check_thread = None
+        self._download_thread = None
+
+    def cancel(self):
+        if self._check_thread and self._check_thread.isRunning():
+            self._check_thread.cancel()
+        if self._download_thread and self._download_thread.isRunning():
+            self._download_thread.cancel()
+
+    @staticmethod
+    def get_local_version_static():
+        if not os.path.exists(LOCAL_VERSION_FILE):
+            return "0.0.0"
+        with open(LOCAL_VERSION_FILE, "r", encoding="utf-8") as f:
+            return f.read().strip()
+
+    def get_local_version(self):
+        return self.get_local_version_static()
+
+    def check_for_update(self):
+        self._check_thread = CheckUpdateThread(self)
+        self._check_thread.finished.connect(self.finished)
+        self._check_thread.start()
+
+    def perform_update(self):
+        self._download_thread = DownloadUpdateThread(self)
+        self._download_thread.progress.connect(self.progress)
+        self._download_thread.status.connect(self.status)
+        self._download_thread.finished.connect(self._on_download_finished)
+        self._download_thread.start()
+
+    def _on_download_finished(self, success, version):
+        if success:
+            sys.exit(0)
+        else:
+            self.finished.emit(False, version)

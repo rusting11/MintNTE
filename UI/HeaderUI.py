@@ -16,7 +16,7 @@ class HeaderUI(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 0, 10, 0)
 
-        self.title_label = QLabel("NTE 薄荷 AI 助手")
+        self.title_label = QLabel("MintNTE")
         self.title_label.setObjectName("TitleLabel")
         layout.addWidget(self.title_label)
 
