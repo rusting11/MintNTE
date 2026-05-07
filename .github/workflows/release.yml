@@ -33,6 +33,7 @@ jobs:
             --icon "Image/logo/titlelogo.ico" `
             --add-data "Image;Image" `
             --add-data "core;core" `
+            --add-data "core/fishing/fishingimages;fishingimages" `
             --add-data "Module;Module" `
             --add-data "UI;UI" `
             --add-data "updater;updater" `
