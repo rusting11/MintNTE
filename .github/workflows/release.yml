@@ -6,36 +6,60 @@ on:
       - 'v*'
 
 permissions:
-  contents: write    # 关键：赋予写权限，允许创建 Release
+  contents: write
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: windows-latest          # 必须用 Windows 环境
+
     steps:
       - uses: actions/checkout@v5
 
-      - name: 打包源码
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 安装依赖
         run: |
-          zip -r NTE-ai.zip . \
-            -x ".git/*" \
-            -x "__pycache__/*" \
-            -x "*.log" \
-            -x "debug_screenshot.png" \
-            -x "macro_config.json" \
-            -x ".github/*" \
-            -x "tools/*"
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt   # 如果你有这个文件的话
+          pip install pyinstaller
+
+      - name: 打包为 exe
+        run: |
+          pyinstaller --noconfirm --onefile `
+            --add-data "Image;Image" `
+            --add-data "core;core" `
+            --add-data "Module;Module" `
+            --add-data "UI;UI" `
+            --add-data "updater;updater" `
+            --add-data "tools;tools" `
+            --add-data "version.txt;." `
+            --hidden-import=pygame `
+            --hidden-import=pydirectinput `
+            --hidden-import=keyboard `
+            --hidden-import=mouse `
+            --hidden-import=cv2 `
+            --hidden-import=numpy `
+            --hidden-import=PIL `
+            --hidden-import=win32gui `
+            main.py
 
       - name: 计算 SHA256
         id: sha256
-        run: echo "sha=$(sha256sum NTE-ai.zip | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
+        shell: bash
+        run: |
+          sha256sum dist/main.exe | cut -d ' ' -f 1 > sha.txt
+          echo "sha=$(cat sha.txt)" >> $GITHUB_OUTPUT
 
-      - name: 创建 Release 并上传
+      - name: 创建 Release 并上传 exe
         uses: softprops/action-gh-release@v3
         with:
           name: ${{ github.ref_name }}
           body: |
             版本 ${{ github.ref_name }}
             SHA256: ${{ steps.sha256.outputs.sha }}
-          files: NTE-ai.zip
+          files: dist/main.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
