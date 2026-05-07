@@ -1,0 +1,11 @@
+#安装模块
+pywin32
+PyQt5
+opencv-python
+numpy
+Pillow
+pydirectinput
+keyboard
+mouse
+pygame
+windows-capture
