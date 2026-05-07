@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write    # 关键：赋予写权限，允许创建 Release
+
 jobs:
   release:
     runs-on: ubuntu-latest
