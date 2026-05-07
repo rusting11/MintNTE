@@ -132,7 +132,3 @@ if __name__ == "__main__":
     icon_path = os.path.join(base_path, "Windowslogo.ico")
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
-
-    window = NeonMainWindow()
-    window.show()
-    sys.exit(app.exec_())

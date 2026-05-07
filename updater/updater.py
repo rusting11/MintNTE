@@ -18,17 +18,19 @@ API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 LOCAL_VERSION_FILE = "version.txt"
 
 class Updater(QObject):
-    progress = pyqtSignal(int)           # 下载进度 0-100
-    status = pyqtSignal(str)            # 状态文字
-    finished = pyqtSignal(bool, str)    # 是否需要更新, 远程版本或空
+    progress = pyqtSignal(int)
+    status = pyqtSignal(str)
+    finished = pyqtSignal(bool, str)
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self._cancel = False
+        self._valid = True          # 标记对象是否有效，防止线程访问已销毁的对象
         self._thread = None
 
     def cancel(self):
         self._cancel = True
+        self._valid = False         # 无效化，线程看到后不再发送信号
 
     def get_local_version(self):
         if not os.path.exists(LOCAL_VERSION_FILE):
@@ -37,8 +39,9 @@ class Updater(QObject):
             return f.read().strip()
 
     def check_for_update(self):
-        """后台检查是否有新版本"""
         def run():
+            if not self._valid:
+                return
             self.status.emit("正在检查更新...")
             local = self.get_local_version()
             try:
@@ -47,25 +50,31 @@ class Updater(QObject):
                     data = json.loads(resp.read().decode())
                 remote_tag = data.get("tag_name", "0.0.0").lstrip("v")
                 needs_update = local != remote_tag
-                self.finished.emit(needs_update, remote_tag)
+                if self._valid:
+                    self.finished.emit(needs_update, remote_tag)
             except Exception as e:
-                self.status.emit(f"检查更新失败: {e}")
-                self.finished.emit(False, "")
+                if self._valid:
+                    self.status.emit(f"检查更新失败: {e}")
+                    self.finished.emit(False, "")
         threading.Thread(target=run, daemon=True).start()
 
     def perform_update(self):
-        """下载、校验、解压并退出，由辅助脚本完成替换重启"""
         def run():
+            if not self._valid:
+                return
             self.status.emit("正在获取最新版本...")
             try:
                 req = urllib.request.Request(API_URL, headers={"User-Agent": "Mozilla/5.0"})
                 with urllib.request.urlopen(req, timeout=10) as resp:
                     data = json.loads(resp.read().decode())
             except Exception as e:
-                self.status.emit(f"获取版本失败: {e}")
-                self.finished.emit(False, "")
+                if self._valid:
+                    self.status.emit(f"获取版本失败: {e}")
+                    self.finished.emit(False, "")
                 return
 
+            if not self._valid:
+                return
             assets = data.get("assets", [])
             if not assets:
                 self.status.emit("没有可下载的更新包")
@@ -79,23 +88,21 @@ class Updater(QObject):
                 return
 
             download_url = zip_asset["browser_download_url"]
-            # 尝试从发布说明中提取 SHA256
             body = data.get("body", "")
             expected_sha256 = None
             match = re.search(r'(?i)sha256[:\s]+([a-fA-F0-9]{64})', body)
             if match:
                 expected_sha256 = match.group(1).lower()
 
-            # 下载
             self.status.emit("正在下载更新包...")
             tmp_dir = tempfile.mkdtemp()
             zip_path = os.path.join(tmp_dir, "update.zip")
             if not self._download_file(download_url, zip_path):
-                self.status.emit("下载失败或已取消")
-                self.finished.emit(False, "")
+                if self._valid:
+                    self.status.emit("下载失败或已取消")
+                    self.finished.emit(False, "")
                 return
 
-            # 校验
             if expected_sha256:
                 self.status.emit("正在校验文件...")
                 self.progress.emit(0)
@@ -106,7 +113,6 @@ class Updater(QObject):
                     return
                 self.status.emit("文件校验通过 ✓")
 
-            # 解压
             self.status.emit("正在解压...")
             extract_dir = os.path.join(tmp_dir, "extracted")
             os.makedirs(extract_dir, exist_ok=True)
@@ -119,9 +125,6 @@ class Updater(QObject):
                 return
 
             # 生成辅助更新脚本
-            app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # updater/ -> 项目根
-            # 修正：实际项目根是 main.py 所在目录，假设 updater 就在项目根下
-            # 考虑到 updater.py 在项目根/updater/下，os.path.dirname(os.path.dirname(__file__)) 是项目根
             app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             helper_path = os.path.join(tmp_dir, "updater_helper.py")
             helper_code = f'''
@@ -131,9 +134,8 @@ old_root = r"{app_root}"
 new_root = r"{extract_dir}"
 main_script = r"{os.path.join(app_root, 'main.py')}"
 
-time.sleep(2)  # 等待主程序退出
+time.sleep(2)
 
-# 复制文件，跳过用户数据和不应覆盖的目录
 for item in os.listdir(new_root):
     s = os.path.join(new_root, item)
     d = os.path.join(old_root, item)
@@ -147,12 +149,10 @@ for item in os.listdir(new_root):
     else:
         shutil.copy2(s, d)
 
-# 更新版本号文件
 version_src = os.path.join(new_root, "version.txt")
 if os.path.exists(version_src):
     shutil.copy2(version_src, os.path.join(old_root, "version.txt"))
 
-# 重启主程序
 os.execl(sys.executable, sys.executable, main_script)
 '''
             with open(helper_path, "w", encoding="utf-8") as f:
@@ -161,7 +161,6 @@ os.execl(sys.executable, sys.executable, main_script)
             self.status.emit("即将退出并更新...")
             creation_flags = subprocess.DETACHED_PROCESS if sys.platform == "win32" else 0
             subprocess.Popen([sys.executable, helper_path], creationflags=creation_flags)
-            # 退出主程序
             sys.exit(0)
 
         self._thread = threading.Thread(target=run, daemon=True)
