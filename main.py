@@ -1,32 +1,32 @@
+# main.py (完整最终版)
 import sys
 import os
-import subprocess
 import ctypes
 
+# ================= 管理员提权（ShellExecute） =================
 def is_admin():
     try:
         return ctypes.windll.shell32.IsUserAnAdmin()
     except:
         return False
 
-def resource_path(relative_path):
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_path, relative_path)
-
 def elevate():
-    elev_exe = resource_path("tools/auth_extractor.exe")
-    if not os.path.exists(elev_exe):
-        print("提权工具 auth_extractor.exe 未找到！")
-        sys.exit(1)
-    cmd = [elev_exe, sys.executable, os.path.abspath(__file__)] + sys.argv[1:]
-    subprocess.run(cmd)
+    """使用 Windows ShellExecute 提权重启自身，无额外控制台窗口"""
+    # 将当前脚本路径和参数拼成命令行
+    params = " ".join([f'"{os.path.abspath(__file__)}"'] + sys.argv[1:])
+    ctypes.windll.shell32.ShellExecuteW(
+        None,               # 父窗口句柄
+        "runas",            # 以管理员身份运行
+        sys.executable,     # Python 解释器
+        params,             # 参数
+        None,               # 工作目录
+        1                   # SW_SHOWNORMAL
+    )
     sys.exit()
 
 if not is_admin():
     elevate()
+# ==============================================
 
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 

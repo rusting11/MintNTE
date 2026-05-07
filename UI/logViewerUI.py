@@ -8,7 +8,7 @@ from PyQt5.QtGui import QIcon
 import config
 
 class LogViewer(QWidget):
-    def __init__(self, log_file="nte_bohe.log", parent=None):
+    def __init__(self, log_file="MintNTE.log", parent=None):
         super().__init__(parent)
         self.log_file = log_file
         self.setWindowTitle("运行日志")

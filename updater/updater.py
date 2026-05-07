@@ -9,12 +9,29 @@ import zipfile
 import shutil
 import subprocess
 import re
+from pathlib import Path
 from PyQt5.QtCore import QObject, pyqtSignal, QThread
 
 GITHUB_REPO = "daoqi/MintNTE"
 API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-LOCAL_VERSION_FILE = "version.txt"
 
+def _get_local_version_path():
+    """兼容开发和打包后的 version.txt 路径"""
+    if getattr(sys, 'frozen', False):
+        return Path(sys._MEIPASS) / "version.txt"
+    else:
+        return Path(__file__).resolve().parent.parent / "version.txt"
+
+def read_local_version():
+    path = _get_local_version_path()
+    if not path.exists():
+        return "0.0.0"
+    for encoding in ['utf-8', 'gbk', 'utf-16-le', 'utf-16-be']:
+        try:
+            return path.read_text(encoding=encoding).strip()
+        except:
+            continue
+    return "0.0.0"
 
 class CheckUpdateThread(QThread):
     finished = pyqtSignal(bool, str)
@@ -28,9 +45,8 @@ class CheckUpdateThread(QThread):
         self.wait(2000)
 
     def run(self):
-        if self._cancel:
-            return
-        local = Updater.get_local_version_static()
+        if self._cancel: return
+        local = read_local_version()
         try:
             req = urllib.request.Request(API_URL, headers={"User-Agent": "Mozilla/5.0"})
             with urllib.request.urlopen(req, timeout=10) as resp:
@@ -42,7 +58,6 @@ class CheckUpdateThread(QThread):
         except Exception:
             if not self._cancel:
                 self.finished.emit(False, "")
-
 
 class DownloadUpdateThread(QThread):
     progress = pyqtSignal(int)
@@ -103,7 +118,7 @@ class DownloadUpdateThread(QThread):
             self.progress.emit(0)
             actual_sha = self._sha256_file(zip_path)
             if actual_sha != expected_sha256:
-                self.status.emit(f"SHA256 不匹配！\n期望: {expected_sha256[:16]}...\n实际: {actual_sha[:16]}...")
+                self.status.emit(f"SHA256 不匹配！")
                 self.finished.emit(False, "")
                 return
             self.status.emit("文件校验通过 ✓")
@@ -186,7 +201,6 @@ os.execl(sys.executable, sys.executable, main_script)
                 sha.update(chunk)
         return sha.hexdigest()
 
-
 class Updater(QObject):
     progress = pyqtSignal(int)
     status = pyqtSignal(str)
@@ -203,15 +217,8 @@ class Updater(QObject):
         if self._download_thread and self._download_thread.isRunning():
             self._download_thread.cancel()
 
-    @staticmethod
-    def get_local_version_static():
-        if not os.path.exists(LOCAL_VERSION_FILE):
-            return "0.0.0"
-        with open(LOCAL_VERSION_FILE, "r", encoding="utf-8") as f:
-            return f.read().strip()
-
     def get_local_version(self):
-        return self.get_local_version_static()
+        return read_local_version()
 
     def check_for_update(self):
         self._check_thread = CheckUpdateThread(self)
