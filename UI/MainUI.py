@@ -8,12 +8,12 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QVBoxLayout,
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QFont
 
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-
 # 项目根目录（MainUI.py 在 UI/ 下，往上两层是根目录）
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # ---------- 导入各模块 UI ----------
 from UI.HeaderUI import HeaderUI
@@ -23,7 +23,7 @@ from core.task.TaskUI import TaskUI
 from core.JoinUs.JoinUsUI import JoinUsUI
 from core.Macro.macro_ui import MacroPanel
 from core.window_detect.window_detect_ui import WindowDetectUI
-from core.Fortissimo.foreground.foreground_ui import ForegroundWindow
+
 from UI.logui import setup_logging, info
 from UI.logViewerUI import LogViewer
 
@@ -64,10 +64,10 @@ class MainUI(QMainWindow):
         self.tab_widget.addTab(MahjongUI(), "麻将")
         self.tab_widget.addTab(TaskUI(), "任务")
 
-        # ========== 超强音标签页（内嵌按钮）==========
+        # ========== 超强音标签页 ==========
         self.fortissimo_tab = self.create_fortissimo_tab()
         self.tab_widget.addTab(self.fortissimo_tab, "超强音")
-        # ============================================
+        # ==================================
 
         self.tab_widget.addTab(JoinUsUI(), "加入我们")
         main_layout.addWidget(self.tab_widget)
@@ -92,7 +92,7 @@ class MainUI(QMainWindow):
         self.apply_global_style()
         self.log_viewer = None
 
-        # 全局热键 Alt+F1，根据当前标签页触发
+        # 全局热键 Alt+F1
         self.shortcut_global = QShortcut(QKeySequence("Alt+F1"), self)
         self.shortcut_global.activated.connect(self.on_global_hotkey)
 
@@ -102,14 +102,12 @@ class MainUI(QMainWindow):
         layout = QVBoxLayout(tab)
         layout.setAlignment(Qt.AlignCenter)
 
-        # 标题
         title = QLabel("Fortissimo 自动演奏")
         title.setFont(QFont("Microsoft YaHei", 20, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet("color: #00ffff; margin: 15px;")
         layout.addWidget(title)
 
-        # 提示文字
         tip_fg = QLabel("前台模式命中率高达 98% 以上 · 游戏窗口自动置顶")
         tip_fg.setAlignment(Qt.AlignCenter)
         tip_fg.setStyleSheet("color: #00ff88; font-size: 13px;")
@@ -122,54 +120,62 @@ class MainUI(QMainWindow):
 
         layout.addSpacing(20)
 
-        # 按钮容器
         btn_layout = QHBoxLayout()
         btn_layout.setAlignment(Qt.AlignCenter)
 
-        btn_foreground = QPushButton("前台模式")
-        btn_foreground.setMinimumSize(150, 60)
-        btn_foreground.setFont(QFont("Microsoft YaHei", 13))
-        btn_foreground.setStyleSheet("""
+        self.btn_foreground = QPushButton("前台模式")
+        self.btn_foreground.setMinimumSize(150, 60)
+        self.btn_foreground.setFont(QFont("Microsoft YaHei", 13))
+        self.btn_foreground.setStyleSheet("""
             QPushButton {
                 background-color: #0a0a2a; border: 2px solid #00ffff;
                 border-radius: 10px; color: #00ffff;
             }
             QPushButton:hover { background-color: #00ffff; color: #050510; }
         """)
-        btn_layout.addWidget(btn_foreground)
+        btn_layout.addWidget(self.btn_foreground)
 
-        btn_background = QPushButton("后台模式")
-        btn_background.setMinimumSize(150, 60)
-        btn_background.setFont(QFont("Microsoft YaHei", 13))
-        btn_background.setStyleSheet("""
+        self.btn_background = QPushButton("后台模式")
+        self.btn_background.setMinimumSize(150, 60)
+        self.btn_background.setFont(QFont("Microsoft YaHei", 13))
+        self.btn_background.setStyleSheet("""
             QPushButton {
                 background-color: #0a0a2a; border: 2px solid #ffaa00;
                 border-radius: 10px; color: #ffaa00;
             }
             QPushButton:hover { background-color: #ffaa00; color: #050510; }
         """)
-        btn_layout.addWidget(btn_background)
+        btn_layout.addWidget(self.btn_background)
 
         layout.addLayout(btn_layout)
 
-        note = QLabel("※ 前台模式会自动保持游戏窗口置顶，确保按键精准。")
+        note = QLabel("※ 前台模式会自动保持游戏窗口置顶，确保按键精准。后台模式使用后台截图，无需置顶。")
         note.setAlignment(Qt.AlignCenter)
         note.setStyleSheet("color: #888888; font-size: 11px; margin-top: 15px;")
         layout.addWidget(note)
 
-        # 延迟导入，避免循环依赖
-        btn_foreground.clicked.connect(lambda: self.launch_fortissimo('foreground'))
-        btn_background.clicked.connect(lambda: self.launch_fortissimo('background'))
+        # 连接信号
+        self.btn_foreground.clicked.connect(lambda: self.launch_fortissimo('foreground'))
+        self.btn_background.clicked.connect(self.launch_background)
         return tab
 
     def launch_fortissimo(self, mode):
-        """安全弹窗打开演奏控制界面"""
+        """弹窗打开前台演奏控制界面"""
         try:
             from core.Fortissimo.foreground.foreground_ui import ForegroundWindow
             self.fortissimo_window = ForegroundWindow(mode=mode)
             self.fortissimo_window.show()
         except Exception as e:
             QMessageBox.critical(self, "启动失败", f"无法启动超强音模块：{str(e)}")
+
+    def launch_background(self):
+        """弹窗打开后台演奏控制界面"""
+        try:
+            from core.Fortissimo.background.background_ui import BackgroundWindow
+            self.background_window = BackgroundWindow()
+            self.background_window.show()
+        except Exception as e:
+            QMessageBox.critical(self, "启动失败", f"无法启动后台模块：{str(e)}")
 
     def on_global_hotkey(self):
         current = self.tab_widget.currentWidget()
@@ -178,7 +184,6 @@ class MainUI(QMainWindow):
         elif hasattr(current, 'toggle_run'):
             current.toggle_run()
 
-    # ---------- 以下与原来完全一致，未改动 ----------
     def apply_global_style(self):
         self.setStyleSheet("""
         QMainWindow {

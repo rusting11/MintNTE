@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # main.py (完整最终版)
 import sys
 import os
@@ -109,12 +109,11 @@ if __name__ == "__main__":
     main_window.header.btn_log.setText("关闭日志")
 
     info("主界面已显示")
-=======
 import sys
 import os
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon
-from ui import NeonMainWindow
+# from ui import NeonMainWindow
 from PyQt5.QtWidgets import QApplication
 
 if __name__ == "__main__":
@@ -136,5 +135,4 @@ if __name__ == "__main__":
 
     window = NeonMainWindow()
     window.show()
->>>>>>> 6a7d2709ccb3670b591c0e2d134f13d4bc5c0ec8
     sys.exit(app.exec_())
