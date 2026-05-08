@@ -52,20 +52,36 @@ jobs:
             --collect-all pydirectinput `
             main.py
 
-      - name: 计算 SHA256
+      - name: 打包源码 (NTE-ai.zip)
+        run: |
+          # 排除不必要的文件，生成 zip
+          zip -r NTE-ai.zip . `
+            -x ".git/*" `
+            -x "__pycache__/*" `
+            -x "*.log" `
+            -x "debug_screenshot.png" `
+            -x "macro_config.json" `
+            -x ".github/*" `
+            -x "tools/*" `
+            -x "build/*" `
+            -x "dist/*"
+
+      - name: 计算 SHA256 (zip)
         id: sha256
         shell: bash
         run: |
-          sha256sum dist/MintNTE.exe | cut -d ' ' -f 1 > sha.txt
+          sha256sum NTE-ai.zip | cut -d ' ' -f 1 > sha.txt
           echo "sha=$(cat sha.txt)" >> $GITHUB_OUTPUT
 
-      - name: 创建 Release 并上传 MintNTE.exe
+      - name: 创建 Release 并上传文件
         uses: softprops/action-gh-release@v3
         with:
           name: ${{ github.ref_name }}
           body: |
             版本 ${{ github.ref_name }}
-            SHA256: ${{ steps.sha256.outputs.sha }}
-          files: dist/MintNTE.exe
+            Zip SHA256: ${{ steps.sha256.outputs.sha }}
+          files: |
+            dist/MintNTE.exe
+            NTE-ai.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
