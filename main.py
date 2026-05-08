@@ -2,7 +2,7 @@
 import sys
 import os
 import ctypes
-
+from PyQt5.QtGui import QIcon
 # ================= 管理员提权（ShellExecute） =================
 def is_admin():
     try:
@@ -69,6 +69,10 @@ class SplashScreen(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    import ctypes
+    app.setWindowIcon(QIcon(os.path.join(BASE_DIR, "Image", "logo", "titlelogo.ico")))
+    # 关键：让 Windows 任务栏能正确识别图标
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('daoqi.MintNTE')
 
     from UI.logui import setup_logging, info
     setup_logging("nte_bohe.log")

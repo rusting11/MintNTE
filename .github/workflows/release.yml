@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: 设置 Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6            # 🆕 升级到 v6 消除 Node 20 警告
         with:
           python-version: '3.10'
 
@@ -28,7 +28,7 @@ jobs:
       - name: 打包为 MintNTE.exe（带图标）
         shell: powershell
         run: |
-          pyinstaller --noconfirm --onefile `
+          pyinstaller --noconfirm --onefile --console `
             --name MintNTE `
             --icon "Image/logo/titlelogo.ico" `
             --add-data "Image;Image" `
@@ -47,24 +47,27 @@ jobs:
             --hidden-import=numpy `
             --hidden-import=PIL `
             --hidden-import=win32gui `
+            --hidden-import=win32ui `
+            --hidden-import=win32con `
+            --hidden-import=ctypes `
             --hidden-import=dxcam `
+            --hidden-import=comtypes `
+            --hidden-import=logging `
             --collect-all dxcam `
             --collect-all pydirectinput `
             main.py
 
-      - name: 打包源码 (NTE-ai.zip)
+      - name: 打包源码 (NTE-ai.zip) - PowerShell
+        shell: powershell
         run: |
-          # 排除不必要的文件，生成 zip
-          zip -r NTE-ai.zip . `
-            -x ".git/*" `
-            -x "__pycache__/*" `
-            -x "*.log" `
-            -x "debug_screenshot.png" `
-            -x "macro_config.json" `
-            -x ".github/*" `
-            -x "tools/*" `
-            -x "build/*" `
-            -x "dist/*"
+          # 创建临时目录，复制需要打包的文件
+          $tempDir = New-Item -ItemType Directory -Force -Path "temp_package"
+          Copy-Item -Recurse -Force * -Destination $tempDir
+          # 删除不需要的文件夹和文件
+          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "$tempDir\.git", "$tempDir\__pycache__", "$tempDir\*.log", "$tempDir\debug_screenshot.png", "$tempDir\macro_config.json", "$tempDir\.github", "$tempDir\tools", "$tempDir\build", "$tempDir\dist", "$tempDir\temp_package"
+          # 压缩为 NTE-ai.zip
+          Compress-Archive -Path "$tempDir\*" -DestinationPath "NTE-ai.zip" -Force
+          Remove-Item -Recurse -Force $tempDir
 
       - name: 计算 SHA256 (zip)
         id: sha256
@@ -73,7 +76,7 @@ jobs:
           sha256sum NTE-ai.zip | cut -d ' ' -f 1 > sha.txt
           echo "sha=$(cat sha.txt)" >> $GITHUB_OUTPUT
 
-      - name: 创建 Release 并上传文件
+      - name: 创建 Release 并上传
         uses: softprops/action-gh-release@v3
         with:
           name: ${{ github.ref_name }}

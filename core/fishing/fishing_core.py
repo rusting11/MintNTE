@@ -24,7 +24,7 @@ from core.fishing.auto_buy_bait import auto_buy_bait
 from core.fishing.auto_sell_fish import sell_fish
 from core.fishing.fishing_follow import start_follow
 from core.fishing.fishing_utils import capture_window_to_cv
-from Module.Hwnd.game_hwnd import set_locked_hwnd
+from Module.Hwnd.game_hwnd import set_locked_hwnd, get_game_hwnd
 from core.auto_reconnect.auto_reconnect import (
     check_and_click_enter_game,
     find_image_on_window
@@ -139,6 +139,12 @@ class FishingCore:
             last_prompt = time.time()
             last_reconnect_check = time.time()
             while not self.stop_event.is_set():
+                # 每轮循环开始时，实时获取当前锁定的窗口句柄
+                latest_hwnd = get_game_hwnd()
+                if latest_hwnd and latest_hwnd != self.hwnd:
+                    logui.info(f"窗口句柄已更新: {self.hwnd} -> {latest_hwnd}")
+                    self.hwnd = latest_hwnd
+                    set_locked_hwnd(self.hwnd)
                 # 掉线检测保持不变
                 if time.time() - last_reconnect_check > 5:
                     last_reconnect_check = time.time()
