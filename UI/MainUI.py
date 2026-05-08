@@ -1,10 +1,11 @@
 import sys
 import os
+from UI.themes import get_theme, THEMES
 import warnings
 import ctypes
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QVBoxLayout,
                              QWidget, QLabel, QMessageBox, QShortcut, QProgressBar,
-                             QPushButton, QHBoxLayout)
+                             QPushButton, QHBoxLayout, QComboBox)
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QFont
 
@@ -26,6 +27,7 @@ from core.Fortissimo.background.background_ui import BackgroundWindow
 from UI.logui import setup_logging, info
 from UI.logViewerUI import LogViewer
 from updater.updater import Updater
+from UI.themes import get_theme
 
 
 class MainUI(QMainWindow):
@@ -39,7 +41,6 @@ class MainUI(QMainWindow):
         icon_path = os.path.join(BASE_DIR, "Image", "logo", "titlelogo.ico")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
-        # 关键：锁定任务栏图标，弹窗后不会消失
         if hasattr(ctypes, 'windll'):
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('daoqi.MintNTE')
 
@@ -49,11 +50,26 @@ class MainUI(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        # 顶部 Header
         self.header = HeaderUI()
         self.header.checkUpdate_signal.connect(self.manual_check_update)
         self.header.toggle_log_signal.connect(self.toggle_log)
         layout.addWidget(self.header)
 
+        # 主题选择栏
+        theme_layout = QHBoxLayout()
+        theme_label = QLabel("切换主题:")
+        theme_label.setStyleSheet("color: #00ffff; font-size: 14px; font-weight: bold;")
+        theme_layout.addWidget(theme_label)
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(list(THEMES.keys()))
+        self.theme_combo.setCurrentText("薄荷风格")
+        self.theme_combo.currentTextChanged.connect(self.apply_theme)
+        theme_layout.addWidget(self.theme_combo)
+        theme_layout.addStretch()
+        layout.addLayout(theme_layout)
+
+        # 标签页
         self.tab_widget = QTabWidget()
         self.tab_widget.setObjectName("MainTabWidget")
         self.tab_widget.addTab(WindowDetectUI(), "窗口检测")
@@ -79,13 +95,8 @@ class MainUI(QMainWindow):
         self.updater.status.connect(self.update_status.setText)
         self.updater.finished.connect(self.on_check_finished)
 
-        self.setStyleSheet("""
-        QMainWindow { background-color: #1e1e2f; }
-        #MainTabWidget::pane { border: 1px solid #0ff; background-color: #1e1e2f; }
-        QTabBar::tab { background-color: #2a2a3a; color: #0ff; padding: 8px 20px; margin: 2px; border-top-left-radius: 5px; border-top-right-radius: 5px; }
-        QTabBar::tab:selected { background-color: #0ff; color: #1e1e2f; }
-        QTabBar::tab:hover { background-color: #3a3a4a; }
-        """)
+        # 应用默认主题
+        self.apply_theme("薄荷风格")
 
         self.log_viewer = None
         self.fortissimo_win = None
@@ -93,6 +104,9 @@ class MainUI(QMainWindow):
         self.shortcut = QShortcut(QKeySequence("Alt+F1"), self)
         self.shortcut.activated.connect(self._global_hotkey)
 
+    def apply_theme(self, theme_name):
+        qss = get_theme(theme_name)
+        self.setStyleSheet(qss)
 
     def _fortissimo_tab(self):
         w = QWidget()
@@ -154,17 +168,27 @@ class MainUI(QMainWindow):
     def on_check_finished(self, needs_update, remote_version):
         if needs_update:
             local = self.updater.get_local_version()
-            reply = QMessageBox.question(self, "发现新版本",
-                                         f"当前版本: {local}\n最新版本: {remote_version}\n是否立即更新？",
-                                         QMessageBox.Yes | QMessageBox.No)
-            if reply == QMessageBox.Yes:
+            box = QMessageBox(self)
+            box.setWindowTitle("发现新版本")
+            box.setText(f"当前版本: {local}\n最新版本: {remote_version}\n是否立即更新？\n如果更新失败，请点击主界面的「加入我们」\n进群下载最新版本")
+            btn_update = box.addButton("迫不急立刻更新", QMessageBox.YesRole)
+            btn_no = box.addButton("不更新!我喜欢旧版本", QMessageBox.NoRole)
+            box.setDefaultButton(btn_update)
+            box.exec_()
+            if box.clickedButton() == btn_update:
                 self.update_progress.setVisible(True)
                 self.update_status.setVisible(True)
                 self.updater.perform_update()
             else:
                 self._hide_update_ui()
         else:
-            box = QMessageBox(QMessageBox.Information, "检查更新", "当前已是最新版本", QMessageBox.NoButton, self)
+            box = QMessageBox(
+                QMessageBox.Information,
+                "检查更新",
+                "当前已是最新版本。\n如果更新失败，请点击主界面的「加入我们」进群下载最新版本。",
+                QMessageBox.NoButton,
+                self
+            )
             box.setAttribute(Qt.WA_DeleteOnClose)
             box.show()
             QTimer.singleShot(3000, box.close)
