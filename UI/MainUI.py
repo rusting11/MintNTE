@@ -164,7 +164,10 @@ class MainUI(QMainWindow):
             else:
                 self._hide_update_ui()
         else:
-            QMessageBox.information(self, "检查更新", "当前已是最新版本")
+            box = QMessageBox(QMessageBox.Information, "检查更新", "当前已是最新版本", QMessageBox.NoButton, self)
+            box.setAttribute(Qt.WA_DeleteOnClose)
+            box.show()
+            QTimer.singleShot(3000, box.close)
             self._hide_update_ui()
 
     def _hide_update_ui(self):

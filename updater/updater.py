@@ -1,3 +1,4 @@
+# updater/updater.py（修复自动更新后无法重启）
 import os
 import sys
 import hashlib
@@ -9,6 +10,7 @@ import zipfile
 import shutil
 import subprocess
 import re
+import time
 from pathlib import Path
 from PyQt5.QtCore import QObject, pyqtSignal, QThread
 
@@ -16,7 +18,6 @@ GITHUB_REPO = "daoqi/MintNTE"
 API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
 def _get_local_version_path():
-    """兼容开发和打包后的 version.txt 路径"""
     if getattr(sys, 'frozen', False):
         return Path(sys._MEIPASS) / "version.txt"
     else:
@@ -137,36 +138,60 @@ class DownloadUpdateThread(QThread):
         app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         helper_path = os.path.join(tmp_dir, "updater_helper.py")
         helper_code = f'''
-import os, sys, time, shutil
+import os, sys, time, shutil, logging, traceback
 
-old_root = r"{app_root}"
-new_root = r"{extract_dir}"
-main_script = r"{os.path.join(app_root, 'main.py')}"
+logging.basicConfig(filename="{os.path.join(tempfile.gettempdir(), 'mint_updater.log')}",
+                    level=logging.INFO,
+                    format='%(asctime)s - %(message)s')
 
-time.sleep(2)
+def main():
+    try:
+        logging.info("更新脚本开始运行")
+        old_root = r"{app_root}"
+        new_root = r"{extract_dir}"
+        main_script = r"{os.path.join(app_root, 'main.py')}"
 
-for item in os.listdir(new_root):
-    s = os.path.join(new_root, item)
-    d = os.path.join(old_root, item)
-    if item in ["version.txt", "nte_bohe.log", "fortissimo.log", "debug_screenshot.png",
-                "macro_config.json", ".git", "__pycache__", "PIP.txt", "tools", "core", "UI", "Module", "Image", ".idea"]:
-        continue
-    if os.path.isdir(s):
-        if os.path.exists(d):
-            shutil.rmtree(d)
-        shutil.copytree(s, d)
-    else:
-        shutil.copy2(s, d)
+        time.sleep(3)
 
-version_src = os.path.join(new_root, "version.txt")
-if os.path.exists(version_src):
-    shutil.copy2(version_src, os.path.join(old_root, "version.txt"))
-
-os.execl(sys.executable, sys.executable, main_script)
+        for item in os.listdir(new_root):
+            s = os.path.join(new_root, item)
+            d = os.path.join(old_root, item)
+            if item in ["version.txt", "nte_bohe.log", "fortissimo.log", "debug_screenshot.png",
+                        "macro_config.json", ".git", "__pycache__", "PIP.txt", "tools", "core", "UI", "Module", "Image", ".idea"]:
+                continue
+            for attempt in range(3):
+                try:
+                    if os.path.isdir(s):
+                        if os.path.exists(d):
+                            shutil.rmtree(d, ignore_errors=True)
+                        shutil.copytree(s, d)
+                    else:
+                        shutil.copy2(s, d)
+                    break
+                except Exception as e:
+                    logging.warning(f"复制 {{s}} 失败 (第{{attempt+1}}次): {{e}}")
+                    time.sleep(2)
+        version_src = os.path.join(new_root, "version.txt")
+        if os.path.exists(version_src):
+            shutil.copy2(version_src, os.path.join(old_root, "version.txt"))
+        logging.info("文件替换完成，准备重启")
+        os.execl(sys.executable, sys.executable, main_script)
+    except:
+        logging.error(traceback.format_exc())
+if __name__ == "__main__":
+    main()
 '''
         with open(helper_path, "w", encoding="utf-8") as f:
             f.write(helper_code)
 
+        # 将 helper 复制到用户临时目录，防止 tmp_dir 被清理
+        helper_temp_path = os.path.join(tempfile.gettempdir(), "mint_updater_helper.py")
+        shutil.copy(helper_path, helper_temp_path)
+
+        creation_flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
+        subprocess.Popen([sys.executable, helper_temp_path], creationflags=creation_flags, close_fds=True)
+
+        time.sleep(0.5)
         self.status.emit("即将退出并更新...")
         self.finished.emit(True, "")
         return
@@ -234,6 +259,7 @@ class Updater(QObject):
 
     def _on_download_finished(self, success, version):
         if success:
+            time.sleep(0.5)  # 确保 helper 进程完全初始化
             sys.exit(0)
         else:
             self.finished.emit(False, version)
