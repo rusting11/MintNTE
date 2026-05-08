@@ -1,4 +1,3 @@
-# core/fishing/FishingUI.py
 import sys
 import os
 import threading
@@ -8,7 +7,7 @@ import numpy as np
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QCheckBox,
                              QPushButton, QLabel, QSpinBox, QGroupBox,
                              QMessageBox, QComboBox, QFileDialog)
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap, QIcon
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -41,7 +40,7 @@ class SimpleROIViewer(QWidget):
         roi_h = self.actual_roi[3] - self.actual_roi[1]
         self.setMinimumSize(roi_w + 20, roi_h + 40)
 
-        # === 新增：设置窗口图标 ===
+        # 设置窗口图标
         if os.path.exists(ICON_PATH):
             self.setWindowIcon(QIcon(ICON_PATH))
 
@@ -85,12 +84,15 @@ class SimpleROIViewer(QWidget):
 
 
 class FishingUI(QWidget):
+    update_stats_signal = pyqtSignal(str)  # grade: 'A','B','S','escape','unknown'
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.fishing_stop_event = None
         self.fishing_thread = None
         self.follower = None
         self.setup_ui()
+        self.update_stats_signal.connect(self.on_fish_grade)
 
     # ---------- 辅助：带图标的 QMessageBox ----------
     def _msg_box(self, icon, title, text):
@@ -110,7 +112,8 @@ class FishingUI(QWidget):
         self.label_a = QLabel("A级鱼类: 0")
         self.label_b = QLabel("B级鱼类: 0")
         self.label_s = QLabel("S级鱼类: 0")
-        for lbl in (self.label_a, self.label_b, self.label_s):
+        self.label_total = QLabel("总钓鱼数: 0")
+        for lbl in (self.label_a, self.label_b, self.label_s, self.label_total):
             lbl.setObjectName("StatLabel")
             lbl.setAlignment(Qt.AlignCenter)
             stats_layout.addWidget(lbl)
@@ -118,10 +121,10 @@ class FishingUI(QWidget):
 
         # ---------- 超时设置 ----------
         timeout_layout = QHBoxLayout()
-        timeout_layout.addWidget(QLabel("等待上钩超时(秒):"))
+        timeout_layout.addWidget(QLabel("钓鱼心跳(秒):"))
         self.spin_timeout = QSpinBox()
         self.spin_timeout.setRange(1, 60)
-        self.spin_timeout.setValue(20)
+        self.spin_timeout.setValue(60)
         self.spin_timeout.setSuffix(" 秒")
         timeout_layout.addWidget(self.spin_timeout)
         timeout_layout.addStretch()
@@ -364,7 +367,8 @@ class FishingUI(QWidget):
                                         sell_mode=sell_mode,
                                         follow_mode=follow_mode,
                                         roi_offset=roi_offset,
-                                        enable_debug_screenshot=enable_debug)
+                                        enable_debug_screenshot=enable_debug,
+                                        stats_callback=lambda grade: self.update_stats_signal.emit(grade))
         self.fishing_thread = threading.Thread(target=self.fishing_core.run, daemon=True)
         self.fishing_thread.start()
         self.btn_start.setEnabled(False)
@@ -387,6 +391,27 @@ class FishingUI(QWidget):
         logui.info("钓鱼已停止")
         self.follower = None
         self.update_q_stats()
+
+    # ---------- 统计更新 ----------
+    def on_fish_grade(self, grade):
+        if grade == 'A':
+            self._add_count(self.label_a)
+        elif grade == 'B':
+            self._add_count(self.label_b)
+        elif grade == 'S':
+            self._add_count(self.label_s)
+        # 总钓鱼数增加（逃走不计）
+        if grade in ('A', 'B', 'S', 'unknown'):
+            self._add_count(self.label_total)
+
+    def _add_count(self, label):
+        text = label.text()
+        try:
+            prefix, num = text.rsplit(':', 1)
+            new_num = int(num.strip()) + 1
+            label.setText(f"{prefix}: {new_num}")
+        except:
+            pass
 
     def closeEvent(self, event):
         self.stop_fishing()
