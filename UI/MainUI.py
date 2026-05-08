@@ -1,6 +1,7 @@
 import sys
 import os
 import warnings
+import ctypes
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QVBoxLayout,
                              QWidget, QLabel, QMessageBox, QShortcut, QProgressBar,
                              QPushButton, QHBoxLayout)
@@ -34,9 +35,13 @@ class MainUI(QMainWindow):
         self.resize(1200, 800)
         self.setMinimumSize(1000, 600)
 
+        # 窗口图标（标题栏）
         icon_path = os.path.join(BASE_DIR, "Image", "logo", "titlelogo.ico")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
+        # 关键：锁定任务栏图标，弹窗后不会消失
+        if hasattr(ctypes, 'windll'):
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('daoqi.MintNTE')
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -87,6 +92,7 @@ class MainUI(QMainWindow):
 
         self.shortcut = QShortcut(QKeySequence("Alt+F1"), self)
         self.shortcut.activated.connect(self._global_hotkey)
+
 
     def _fortissimo_tab(self):
         w = QWidget()

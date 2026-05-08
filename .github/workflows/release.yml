@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: 设置 Python
-        uses: actions/setup-python@v6            # 🆕 升级到 v6 消除 Node 20 警告
+        uses: actions/setup-python@v5         # ← 改回 v5（v6 不存在）
         with:
           python-version: '3.10'
 
@@ -25,7 +25,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 打包为 MintNTE.exe（带图标）
+      - name: 打包为 MintNTE.exe
         shell: powershell
         run: |
           pyinstaller --noconfirm --onefile --console `
@@ -52,29 +52,27 @@ jobs:
             --hidden-import=ctypes `
             --hidden-import=dxcam `
             --hidden-import=comtypes `
-            --hidden-import=logging `
             --collect-all dxcam `
             --collect-all pydirectinput `
             main.py
 
-      - name: 打包源码 (NTE-ai.zip) - PowerShell
+      - name: 打包源代码 (zip)
         shell: powershell
         run: |
-          # 创建临时目录，复制需要打包的文件
-          $tempDir = New-Item -ItemType Directory -Force -Path "temp_package"
-          Copy-Item -Recurse -Force * -Destination $tempDir
-          # 删除不需要的文件夹和文件
-          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "$tempDir\.git", "$tempDir\__pycache__", "$tempDir\*.log", "$tempDir\debug_screenshot.png", "$tempDir\macro_config.json", "$tempDir\.github", "$tempDir\tools", "$tempDir\build", "$tempDir\dist", "$tempDir\temp_package"
-          # 压缩为 NTE-ai.zip
+          $tempDir = "temp_pkg"
+          New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
+          # 只复制需要打包的文件，排除临时目录和构建产物
+          Get-ChildItem -Exclude @('.git','__pycache__','*.log','debug_screenshot.png','macro_config.json','.github','tools','build','dist','temp_pkg') | 
+            Copy-Item -Recurse -Force -Destination $tempDir
           Compress-Archive -Path "$tempDir\*" -DestinationPath "NTE-ai.zip" -Force
           Remove-Item -Recurse -Force $tempDir
 
-      - name: 计算 SHA256 (zip)
+      - name: 计算 SHA256
         id: sha256
-        shell: bash
+        shell: powershell
         run: |
-          sha256sum NTE-ai.zip | cut -d ' ' -f 1 > sha.txt
-          echo "sha=$(cat sha.txt)" >> $GITHUB_OUTPUT
+          $sha = (Get-FileHash -Algorithm SHA256 "NTE-ai.zip").Hash.ToLower()
+          "sha=$sha" >> $env:GITHUB_OUTPUT
 
       - name: 创建 Release 并上传
         uses: softprops/action-gh-release@v3

@@ -2,7 +2,7 @@
 import sys
 import os
 import ctypes
-from PyQt5.QtGui import QIcon
+
 # ================= 管理员提权（ShellExecute） =================
 def is_admin():
     try:
@@ -12,7 +12,6 @@ def is_admin():
 
 def elevate():
     """使用 Windows ShellExecute 提权重启自身，无额外控制台窗口"""
-    # 将当前脚本路径和参数拼成命令行
     params = " ".join([f'"{os.path.abspath(__file__)}"'] + sys.argv[1:])
     ctypes.windll.shell32.ShellExecuteW(
         None,               # 父窗口句柄
@@ -32,7 +31,7 @@ os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel
 from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap, QIcon      # ← 添加了 QIcon
 import pygame
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -69,9 +68,10 @@ class SplashScreen(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    import ctypes
+
+    # 设置应用图标（任务栏和窗口标题栏）
     app.setWindowIcon(QIcon(os.path.join(BASE_DIR, "Image", "logo", "titlelogo.ico")))
-    # 关键：让 Windows 任务栏能正确识别图标
+    # 第一次锁定任务栏图标
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('daoqi.MintNTE')
 
     from UI.logui import setup_logging, info
@@ -98,6 +98,12 @@ if __name__ == "__main__":
     from UI.MainUI import MainUI
     main_window = MainUI()
     main_window.show()
+
+    # 启动画面关闭后，再次强制锁定任务栏图标，防止弹窗后丢失
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('daoqi.MintNTE')
+    # 广播系统设置变更消息，强制任务栏刷新图标
+    ctypes.windll.user32.SendMessageW(0xFFFF, 0x001A, 0, 0)  # HWND_BROADCAST + WM_SETTINGCHANGE
+
     main_window.auto_check_update()
 
     from UI.logViewerUI import LogViewer
