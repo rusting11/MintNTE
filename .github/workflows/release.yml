@@ -57,21 +57,28 @@ jobs:
             --collect-all pydirectinput `
             main.py
 
-      - name: 打包源代码 (zip)
+      - name: 打包源码 (MintNTE.zip)
         shell: powershell
         run: |
-          $tempDir = "temp_pkg"
-          New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
-          Get-ChildItem -Exclude @('.git','__pycache__','*.log','debug_screenshot.png','macro_config.json','.github','tools','build','dist','temp_pkg') | 
-            Copy-Item -Recurse -Force -Destination $tempDir
-          Compress-Archive -Path "$tempDir\*" -DestinationPath "NTE-ai.zip" -Force
-          Remove-Item -Recurse -Force $tempDir
+          $pkgDir = "pkg_temp"
+          New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
+          Copy-Item -Path * -Destination $pkgDir -Recurse -Force
+          Remove-Item -Recurse -Force "$pkgDir\.git" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "$pkgDir\__pycache__" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "$pkgDir\dist" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "$pkgDir\build" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "$pkgDir\tools" -ErrorAction SilentlyContinue
+          Remove-Item -Force "$pkgDir\*.log" -ErrorAction SilentlyContinue
+          Remove-Item -Force "$pkgDir\debug_screenshot.png" -ErrorAction SilentlyContinue
+          Remove-Item -Force "$pkgDir\macro_config.json" -ErrorAction SilentlyContinue
+          Compress-Archive -Path "$pkgDir\*" -DestinationPath "MintNTE.zip" -Force
+          Remove-Item -Recurse -Force $pkgDir
 
-      - name: 计算 SHA256
+      - name: 计算 SHA256 (zip)
         id: sha256
         shell: powershell
         run: |
-          $sha = (Get-FileHash -Algorithm SHA256 "NTE-ai.zip").Hash.ToLower()
+          $sha = (Get-FileHash -Algorithm SHA256 "MintNTE.zip").Hash.ToLower()
           "sha=$sha" >> $env:GITHUB_OUTPUT
 
       - name: 创建 Release 并上传
@@ -83,6 +90,6 @@ jobs:
             Zip SHA256: ${{ steps.sha256.outputs.sha }}
           files: |
             dist/MintNTE.exe
-            NTE-ai.zip
+            MintNTE.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -8,9 +8,10 @@ import json
 import tempfile
 import zipfile
 import shutil
-import  time
+import time
 import subprocess
 import re
+import psutil
 from pathlib import Path
 from PyQt5.QtCore import QObject, pyqtSignal, QThread
 
@@ -138,41 +139,67 @@ class DownloadUpdateThread(QThread):
         app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         helper_temp_path = os.path.join(tempfile.gettempdir(), "mint_updater_helper.py")
         helper_code = f'''
-import os, sys, time, shutil, traceback, logging
+import os, sys, time, shutil, logging, psutil, subprocess
 
-logging.basicConfig(
-    filename="{os.path.join(tempfile.gettempdir(), 'mint_updater.log')}",
-    level=logging.INFO,
-    format='%(asctime)s - %(message)s'
-)
+LOG_PATH = r"{os.path.join(tempfile.gettempdir(), 'mint_updater.log')}"
+logging.basicConfig(filename=LOG_PATH, level=logging.INFO,
+                    format='%(asctime)s - %(message)s')
+
+def force_remove(path):
+    """强制删除文件或目录，尝试5次"""
+    for _ in range(5):
+        try:
+            if os.path.isdir(path):
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                if os.path.exists(path):
+                    os.remove(path)
+            return True
+        except Exception as e:
+            logging.warning(f"删除 {{path}} 失败: {{e}}, 重试...")
+            time.sleep(1)
+    return False
+
+def wait_old_exe_gone():
+    """等待旧版MintNTE.exe完全退出"""
+    for _ in range(10):
+        found = False
+        for proc in psutil.process_iter(['name']):
+            if proc.info['name'] and proc.info['name'].lower() == 'mintnte.exe':
+                found = True
+                break
+        if not found:
+            return True
+        time.sleep(1)
+    logging.warning("旧版MintNTE.exe可能仍在运行")
+    return False
 
 def main():
     try:
         logging.info("更新脚本启动")
+        wait_old_exe_gone()
+
         old_root = r"{app_root}"
         new_root = r"{extract_dir}"
         main_script = r"{os.path.join(app_root, 'main.py')}"
-
-        # 等待主程序完全退出
-        time.sleep(3)
 
         for item in os.listdir(new_root):
             s = os.path.join(new_root, item)
             d = os.path.join(old_root, item)
 
-            # 只跳过真正的用户数据，核心代码目录不再跳过
             if item in [
-                "version.txt", "nte_bohe.log", "fortissimo.log",
-                "debug_screenshot.png", "macro_config.json",
-                ".git", "__pycache__", "PIP.txt", "tools"
+                "nte_bohe.log", "fortissimo.log", "debug_screenshot.png",
+                "macro_config.json", ".git", "__pycache__", "PIP.txt", "tools"
             ]:
                 continue
 
+            # 强制删除旧目标（解决占用问题）
+            force_remove(d)
+
+            # 复制新文件
             for attempt in range(3):
                 try:
                     if os.path.isdir(s):
-                        if os.path.exists(d):
-                            shutil.rmtree(d, ignore_errors=True)
                         shutil.copytree(s, d, dirs_exist_ok=True)
                     else:
                         shutil.copy2(s, d)
@@ -180,16 +207,19 @@ def main():
                 except Exception as e:
                     logging.warning(f"复制 {{s}} 失败 (第{{attempt+1}}次): {{e}}")
                     time.sleep(2)
+                    force_remove(d)   # 再次尝试删除
 
-        # 覆盖版本文件
+        # 覆盖版本文件（同样强制删除）
         version_src = os.path.join(new_root, "version.txt")
+        version_dst = os.path.join(old_root, "version.txt")
         if os.path.exists(version_src):
-            shutil.copy2(version_src, os.path.join(old_root, "version.txt"))
+            force_remove(version_dst)
+            shutil.copy2(version_src, version_dst)
 
-        logging.info("文件替换完成，准备重启")
+        logging.info("文件替换完成，启动新程序")
         os.execl(sys.executable, sys.executable, main_script)
-    except:
-        logging.error(traceback.format_exc())
+    except Exception as e:
+        logging.error(str(e))
 
 if __name__ == "__main__":
     main()
@@ -197,14 +227,10 @@ if __name__ == "__main__":
         with open(helper_temp_path, "w", encoding="utf-8") as f:
             f.write(helper_code)
 
-        # 启动独立更新进程
-        if sys.platform == "win32":
-            creation_flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-        else:
-            creation_flags = 0
+        creation_flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
         subprocess.Popen([sys.executable, helper_temp_path], creationflags=creation_flags, close_fds=True)
 
-        time.sleep(0.5)
+        time.sleep(1)
         self.status.emit("即将退出并更新...")
         self.finished.emit(True, "")
         return
