@@ -1,5 +1,5 @@
 # updater/updater.py
-import os, sys, hashlib, urllib.request, urllib.error, json, tempfile, zipfile, shutil, time, subprocess, re
+import os, sys, hashlib, urllib.request, urllib.error, json, tempfile, subprocess
 from pathlib import Path
 from PyQt5.QtCore import QObject, pyqtSignal, QThread
 from PyQt5.QtWidgets import QApplication
@@ -8,28 +8,26 @@ from UI import logui
 GITHUB_REPO = "daoqi/MintNTE"
 API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
-# ---------- 文件路径辅助 ----------
+# ---------- 路径辅助函数 ----------
 def _get_root_dir():
-    """获取程序根目录（PyInstaller打包后为exe所在目录，开发环境为项目根目录）"""
+    """程序根目录（打包后为exe所在目录，开发环境为项目根目录）"""
     if getattr(sys, 'frozen', False):
         return Path(os.path.dirname(sys.executable))
     else:
         return Path(__file__).resolve().parent.parent
+
 def _get_local_version_path():
+    """获取版本文件路径，打包后强制使用 sys._MEIPASS"""
     if getattr(sys, 'frozen', False):
-        # 打包后 version.txt 一定在 sys._MEIPASS 的根目录
         return Path(sys._MEIPASS) / "version.txt"
     else:
-        # 源码运行时在项目根目录
         return Path(__file__).resolve().parent.parent / "version.txt"
+
 def read_local_version():
     path = _get_local_version_path()
     if not path.exists():
         return "0.0.0"
-    try:
-        return path.read_text(encoding='utf-8').strip()
-    except:
-        return "0.0.0"
+    return path.read_text(encoding='utf-8').strip()
 
 def read_skip_version():
     path = _get_root_dir() / "skip_version.txt"
@@ -46,11 +44,9 @@ def parse_version(v):
     except:
         return (0, 0, 0)
 
-
 # ---------- 检查更新线程 ----------
 class CheckUpdateThread(QThread):
-    # status: 1=有更新, 0=无更新或已跳过, -1=错误; info=版本号或错误信息
-    result = pyqtSignal(int, str)
+    result = pyqtSignal(int, str)   # status: 1=有更新, 0=无更新, -1=错误
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -78,12 +74,11 @@ class CheckUpdateThread(QThread):
             logui.error(f"检查更新失败: {e}")
             self.result.emit(-1, str(e))
 
-
-# ---------- 下载并应用更新线程 ----------
+# ---------- 下载并更新线程 ----------
 class DownloadUpdateThread(QThread):
-    progress = pyqtSignal(int)       # 下载进度 0-100
-    status = pyqtSignal(str)         # 状态文字
-    finished = pyqtSignal(bool)      # True=下载并触发更新成功（退出程序前）
+    progress = pyqtSignal(int)
+    status = pyqtSignal(str)
+    finished = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -104,83 +99,52 @@ class DownloadUpdateThread(QThread):
             self.finished.emit(False)
             return
 
+        # 找到 .exe 资源
         assets = data.get("assets", [])
-        zip_asset = next((a for a in assets if a["name"].endswith(".zip")), None)
-        if not zip_asset:
-            self.status.emit("未找到 .zip 更新包")
+        exe_asset = next((a for a in assets if a["name"].endswith(".exe")), None)
+        if not exe_asset:
+            self.status.emit("未找到 .exe 更新文件")
             self.finished.emit(False)
             return
 
-        download_url = zip_asset["browser_download_url"]
-        # 提取 Release 描述中的 SHA256
-        body = data.get("body", "")
-        expected_sha = None
-        match = re.search(r'(?i)sha256[:\s]+([a-fA-F0-9]{64})', body)
-        if match:
-            expected_sha = match.group(1).lower()
-
-        self.status.emit("正在下载更新包...")
+        download_url = exe_asset["browser_download_url"]
+        self.status.emit("正在下载新版本...")
         tmp_dir = tempfile.mkdtemp()
-        zip_path = os.path.join(tmp_dir, "update.zip")
-        if not self._download_file(download_url, zip_path):
+        exe_path = os.path.join(tmp_dir, "MintNTE.exe")
+
+        if not self._download_file(download_url, exe_path):
             if not self._cancel:
                 self.status.emit("下载失败")
-                self.finished.emit(False)
-            return
-
-        if expected_sha:
-            self.status.emit("正在校验文件...")
-            actual = self._sha256_file(zip_path)
-            if actual != expected_sha:
-                self.status.emit("SHA256 校验失败，文件损坏")
-                self.finished.emit(False)
-                return
-
-        self.status.emit("正在解压...")
-        extract_dir = os.path.join(tmp_dir, "extracted")
-        os.makedirs(extract_dir, exist_ok=True)
-        try:
-            with zipfile.ZipFile(zip_path, 'r') as zf:
-                zf.extractall(extract_dir)
-        except Exception as e:
-            self.status.emit(f"解压失败: {e}")
             self.finished.emit(False)
             return
 
-        # 若压缩包内只有一个文件夹，进入该文件夹
-        items = os.listdir(extract_dir)
-        if len(items) == 1 and os.path.isdir(os.path.join(extract_dir, items[0])):
-            extract_dir = os.path.join(extract_dir, items[0])
-
+        # 目标路径
         app_root = str(_get_root_dir())
+        target_exe = os.path.join(app_root, "MintNTE.exe")
 
-        # 生成临时批处理，等待主程序退出后替换文件并启动新版本
-        bat_path = os.path.join(tempfile.gettempdir(), "mint_update.bat")
-        with open(bat_path, "w", encoding="gbk") as f:
-            f.write(f'''@echo off
-chcp 65001 >nul
-echo 正在等待 MintNTE 退出...
-:waitloop
-timeout /t 1 /nobreak >nul
-tasklist /FI "IMAGENAME eq MintNTE.exe" 2>NUL | find /I "MintNTE.exe" >NUL
-if not errorlevel 1 goto waitloop
-
-echo 正在替换文件...
-xcopy "{extract_dir}\\*" "{app_root}\\" /E /Y /Q >nul
-if errorlevel 1 (
-    echo 文件替换失败，请手动覆盖更新。
-    pause
-    exit /b 1
-)
-
-echo 更新完成，正在启动新版本...
-start "" "{app_root}\\MintNTE.exe"
-del "%~f0" & exit
+        # 生成 PowerShell 更新脚本（支持中文路径、无乱码）
+        ps1_path = os.path.join(tempfile.gettempdir(), "mint_update.ps1")
+        with open(ps1_path, "w", encoding="utf-8-sig") as f:
+            f.write(f'''Write-Host "Waiting for MintNTE to exit..."
+while (Get-Process -Name "MintNTE" -ErrorAction SilentlyContinue) {{
+    Start-Sleep -Seconds 1
+}}
+$source = "{exe_path}"
+$dest = "{target_exe}"
+if (-not (Test-Path $source)) {{
+    Write-Host "ERROR: Downloaded exe not found!"
+    Read-Host "Press Enter"
+    exit 1
+}}
+Copy-Item -Path $source -Destination $dest -Force
+Write-Host "Update complete, starting..."
+Start-Process -FilePath $dest
+Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force
 ''')
 
-        # 启动批处理（与当前进程脱离）
+        # 启动脚本，脱离当前进程
         subprocess.Popen(
-            f'cmd /c start "" "{bat_path}"',
+            f'powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "{ps1_path}"',
             shell=True,
             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
         )
@@ -207,21 +171,12 @@ del "%~f0" & exit
                             self.progress.emit(int(downloaded / total * 100))
             self.progress.emit(100)
             return True
-        except Exception:
+        except:
             return False
-
-    @staticmethod
-    def _sha256_file(filepath):
-        sha = hashlib.sha256()
-        with open(filepath, "rb") as f:
-            while chunk := f.read(8192):
-                sha.update(chunk)
-        return sha.hexdigest()
-
 
 # ---------- Updater 主控 ----------
 class Updater(QObject):
-    checkResult = pyqtSignal(int, str)   # -1=错误, 0=无更新, 1=有更新
+    checkResult = pyqtSignal(int, str)
     progress = pyqtSignal(int)
     status = pyqtSignal(str)
 
@@ -258,7 +213,6 @@ class Updater(QObject):
 
     def _on_download_end(self, success):
         if success:
-            # 下载完成，批处理已运行，退出主程序
             QApplication.quit()
         else:
             self.status.emit("更新失败，请重试或手动下载")
