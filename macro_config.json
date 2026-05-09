@@ -1,0 +1,18 @@
+{
+  "target_title": "\u5f02\u73af",
+  "loop_count": 99,
+  "actions": [
+    {
+      "type": "mouse",
+      "data": "left",
+      "is_down": true,
+      "delay": 3.3935608863830566
+    },
+    {
+      "type": "mouse",
+      "data": "left",
+      "is_down": false,
+      "delay": 0.15180206298828125
+    }
+  ]
+}

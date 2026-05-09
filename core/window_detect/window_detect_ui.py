@@ -32,9 +32,6 @@ class WindowDetectUI(QWidget):
         super().__init__(parent)
         self.target_hwnd = None          # 当前拾取到的窗口句柄
         self.locked_hwnd = None          # 当前锁定的句柄
-        self.preview_timer = QTimer(self)
-        self.preview_timer.timeout.connect(self.update_preview)
-        self.show_preview = True
 
         self.spy_cursor = None
         if os.path.exists(SPY_PATH):
@@ -57,7 +54,7 @@ class WindowDetectUI(QWidget):
         left_layout = QVBoxLayout(left_widget)
         left_layout.setContentsMargins(10, 10, 10, 10)
 
-        # 图标区域
+        # 图标 + 指引
         self.icon_frame = QFrame()
         self.icon_frame.setFixedSize(200, 120)
         self.icon_frame.setStyleSheet("background: transparent;")
@@ -78,16 +75,27 @@ class WindowDetectUI(QWidget):
         else:
             self.spy_static.setText("+")
             self.spy_static.setStyleSheet("color: red; font-weight: bold;")
-        self.spy_static.setGeometry(91, 51, 17, 17)  # 初始位置
+        self.spy_static.setGeometry(91, 51, 17, 17)
         self.spy_static.setCursor(Qt.CrossCursor)
         self.spy_static.mousePressEvent = self.on_spy_press
         self.spy_static.setMouseTracking(True)
 
         icon_container = QVBoxLayout()
         icon_container.addWidget(self.icon_frame, alignment=Qt.AlignCenter)
-        hint = QLabel("按住靶心拖到目标窗口后松开")
+
+        hint = QLabel(
+            "🎯 窗口检测操作指引⬆️\n\n"
+            "① 按住右侧“靶心”拖到游戏窗口\n"
+            "② 松开后自动获取窗口信息与截图\n"
+            "③ 点击“锁定窗口”按钮即可开始\n\n"
+            "🧣 锁定后钓鱼、宏等功能可后台操作"
+        )
         hint.setAlignment(Qt.AlignCenter)
-        hint.setStyleSheet("color: #00ddff; font-size: 9pt; font-family: 'Microsoft YaHei';")
+        hint.setStyleSheet(
+            "color: #00ffcc; font-size: 13pt; "
+            "font-family: 'Microsoft YaHei'; "
+            "background: transparent; padding: 10px;"
+        )
         icon_container.addWidget(hint)
         left_layout.addLayout(icon_container)
 
@@ -135,10 +143,11 @@ class WindowDetectUI(QWidget):
         self.preview_label.setStyleSheet("background-color: #000; border: 1px solid #0ff;")
         right_layout.addWidget(self.preview_label)
 
-        self.btn_toggle_preview = QPushButton("关闭画面")
-        self.btn_toggle_preview.setObjectName("NeonButton")
-        self.btn_toggle_preview.clicked.connect(self.toggle_preview)
-        right_layout.addWidget(self.btn_toggle_preview, alignment=Qt.AlignCenter)
+        # 实时画面显示
+        self.btn_capture = QPushButton("点击获取最新游戏界面")
+        self.btn_capture.setObjectName("NeonButton")
+        self.btn_capture.clicked.connect(self.capture_single_frame)
+        right_layout.addWidget(self.btn_capture, alignment=Qt.AlignCenter)
 
         h_main_layout.addWidget(left_widget, stretch=3)
         h_main_layout.addWidget(right_widget, stretch=2)
@@ -171,7 +180,6 @@ class WindowDetectUI(QWidget):
         if event.button() != Qt.LeftButton:
             return
 
-        # 创建置顶的临时跟随窗口
         self.tracker = QWidget()
         self.tracker.setWindowFlags(
             Qt.FramelessWindowHint |
@@ -181,7 +189,6 @@ class WindowDetectUI(QWidget):
         self.tracker.setAttribute(Qt.WA_TranslucentBackground)
         self.tracker.setFixedSize(17, 17)
 
-        # 靶心图片
         label = QLabel(self.tracker)
         if os.path.exists(SPY_PATH):
             label.setPixmap(QPixmap(SPY_PATH).scaled(17, 17, Qt.KeepAspectRatio, Qt.SmoothTransformation))
@@ -190,16 +197,13 @@ class WindowDetectUI(QWidget):
             label.setStyleSheet("color: red; font-weight: bold; background: transparent;")
         label.setGeometry(0, 0, 17, 17)
 
-        # 放到鼠标位置
         global_pos = QCursor.pos()
         self.tracker.move(global_pos.x() - 8, global_pos.y() - 8)
         self.tracker.show()
 
-        # 替换光标
         if self.spy_cursor:
             QApplication.setOverrideCursor(self.spy_cursor)
 
-        # 激活全局鼠标跟踪
         self.drag_active = True
         QApplication.instance().installEventFilter(self)
 
@@ -214,36 +218,31 @@ class WindowDetectUI(QWidget):
                 self.drag_active = False
                 QApplication.instance().removeEventFilter(self)
 
-                # 销毁跟踪窗口
                 if self.tracker:
                     self.tracker.close()
                     self.tracker = None
 
-                # 恢复光标
                 while QApplication.overrideCursor() is not None:
                     QApplication.restoreOverrideCursor()
 
-                # 获取鼠标当前位置的窗口句柄
                 pt = win32gui.GetCursorPos()
                 hwnd = win32gui.WindowFromPoint(pt)
-                # 排除自身及跟踪窗口
                 if hwnd == int(self.winId()):
                     hwnd = None
                 self.target_hwnd = hwnd
                 self.update_info()
 
                 if self.target_hwnd and win32gui.IsWindow(self.target_hwnd):
-                    self.start_preview()
+                    self.capture_single_frame()          # 只截一帧
                     logui.info(f"拾取窗口: {win32gui.GetWindowText(self.target_hwnd)}")
                 else:
-                    self.stop_preview()
+                    self.preview_label.clear()
                 return True
         return super().eventFilter(obj, event)
 
     # ---------- 锁定/解除绑定 ----------
     def toggle_lock(self):
         if self.locked_hwnd is None:
-            # 锁定当前拾取的窗口
             if not self.target_hwnd or not win32gui.IsWindow(self.target_hwnd):
                 logui.warning("没有可锁定的窗口，请先拾取一个窗口")
                 return
@@ -255,7 +254,6 @@ class WindowDetectUI(QWidget):
             self.lock_status_label.setStyleSheet("color: #00ff00; font-weight: bold;")
             self.btn_lock.setText("解除锁定")
         else:
-            # 解除锁定
             clear_locked_hwnd()
             logui.info("已解除窗口锁定")
             self.locked_hwnd = None
@@ -296,36 +294,19 @@ class WindowDetectUI(QWidget):
         except Exception as e:
             logui.error(f"更新窗口信息失败: {e}")
 
-    # ---------- 实时预览 ----------
-    def start_preview(self):
-        if not self.preview_timer.isActive() and self.show_preview:
-            self.preview_timer.start(100)
-
-    def stop_preview(self):
-        self.preview_timer.stop()
-        self.preview_label.clear()
-
-    def toggle_preview(self):
-        self.show_preview = not self.show_preview
-        if self.show_preview:
-            self.btn_toggle_preview.setText("关闭画面")
-            self.start_preview()
-        else:
-            self.btn_toggle_preview.setText("显示画面")
-            self.stop_preview()
-
-    def update_preview(self):
+    # ---------- 静态截图（只拍一张） ----------
+    def capture_single_frame(self):
+        """捕获一张窗口截图并显示在预览区，不启动任何定时器"""
         if not self.target_hwnd or not win32gui.IsWindow(self.target_hwnd):
-            self.preview_label.setText("窗口已关闭")
-            self.stop_preview()
+            self.preview_label.setText("请前往窗口检测→标靶→选择异环→拖动靶心→锁定")
             return
         try:
-            # 获取客户区尺寸（稳定可靠）
             rect = win32gui.GetClientRect(self.target_hwnd)
             left, top, right, bottom = rect
             width = right - left
             height = bottom - top
             if width <= 0 or height <= 0:
+                self.preview_label.setText("窗口尺寸无效")
                 return
             hwnd_dc = win32gui.GetWindowDC(self.target_hwnd)
             mfc_dc = win32ui.CreateDCFromHandle(hwnd_dc)
@@ -333,13 +314,11 @@ class WindowDetectUI(QWidget):
             bitmap = win32ui.CreateBitmap()
             bitmap.CreateCompatibleBitmap(mfc_dc, width, height)
             save_dc.SelectObject(bitmap)
-            # 使用 PrintWindow 捕获客户区，参数 3 表示包含客户区内容（通常支持）
             success = windll.user32.PrintWindow(self.target_hwnd, save_dc.GetSafeHdc(), 3)
             if success:
                 bi = bitmap.GetInfo()
                 buf = bitmap.GetBitmapBits(True)
                 img = Image.frombuffer('RGB', (bi['bmWidth'], bi['bmHeight']), buf, 'raw', 'BGRX', 0, 1)
-                # 缩放比例保持 0.3
                 nw, nh = int(width * 0.3), int(height * 0.3)
                 if nw > 0 and nh > 0:
                     img = img.resize((nw, nh), Image.Resampling.LANCZOS)
@@ -352,7 +331,20 @@ class WindowDetectUI(QWidget):
             mfc_dc.DeleteDC()
             win32gui.ReleaseDC(self.target_hwnd, hwnd_dc)
         except Exception as e:
-            self.preview_label.setText(f"预览异常: {e}")
+            self.preview_label.setText(f"截图异常: {e}")
+
+    # 以下方法保留空壳，保持接口兼容
+    def start_preview(self):
+        pass
+
+    def stop_preview(self):
+        pass
+
+    def toggle_preview(self):
+        pass
+
+    def update_preview(self):
+        pass
 
     def closeEvent(self, event):
         if self.drag_active:
@@ -361,5 +353,4 @@ class WindowDetectUI(QWidget):
                 self.tracker.close()
             while QApplication.overrideCursor() is not None:
                 QApplication.restoreOverrideCursor()
-        self.preview_timer.stop()
         event.accept()

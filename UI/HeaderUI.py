@@ -32,7 +32,7 @@ class HeaderUI(QWidget):
         self.btn_log.clicked.connect(self.toggle_log_signal.emit)
         layout.addWidget(self.btn_log)
 
-        self.btn_help = QPushButton("帮助")
+        self.btn_help = QPushButton("设置教程")
         self.btn_help.setObjectName("HeaderButton")
         self.btn_help.clicked.connect(self.show_tutorial)
         layout.addWidget(self.btn_help)

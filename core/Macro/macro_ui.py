@@ -1,25 +1,31 @@
-import sys
-import os
+# core/Macro/macro_ui.py
+import sys, os
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QGroupBox, QTextEdit, QSpinBox, QLineEdit
+    QLabel, QGroupBox, QTextEdit, QSpinBox
 )
-from PyQt5.QtCore import pyqtSignal, Qt, QMetaObject, Q_ARG
-import win32api
+from PyQt5.QtCore import pyqtSignal, Qt, QTimer
+import win32api, win32gui
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 from core.Macro.macro_core import MacroCore
+from Module.Hwnd.game_hwnd import get_game_hwnd
 from UI import logui
+
+# 尝试导入 keyboard 库（全局热键必需）
+try:
+    import keyboard
+    HAS_KEYBOARD = True
+except ImportError:
+    HAS_KEYBOARD = False
 
 class MacroPanel(QWidget):
     signal_toggle_record = pyqtSignal()
     signal_toggle_macro = pyqtSignal()
     signal_save_config = pyqtSignal()
     signal_load_config = pyqtSignal()
-    signal_find_window = pyqtSignal()
-    signal_title_changed = pyqtSignal(str)
     signal_loop_changed = pyqtSignal(int)
 
     def __init__(self, parent=None):
@@ -28,29 +34,33 @@ class MacroPanel(QWidget):
         self.setup_ui()
         self.apply_style()
 
-        self.core = MacroCore(loop_count=self.spin_loop.value(), target_title=self.edit_title.text())
+        self.core = MacroCore(loop_count=self.spin_loop.value())
         self.connect_signals()
-        self.core.register_hotkeys()
-        self.core.find_window()
+
+        # 定时刷新当前锁定窗口的句柄
+        self.hwnd_timer = QTimer(self)
+        self.hwnd_timer.timeout.connect(self.refresh_hwnd)
+        self.hwnd_timer.start(1000)
+        self.refresh_hwnd()
+
+        # 延迟注册全局热键，避免阻塞启动
+        self.hotkey_alt_y = None
+        self.hotkey_alt_t = None
+        QTimer.singleShot(1000, self._register_global_hotkeys)
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
 
-        win_grp = QGroupBox("目标窗口 (支持后台)")
+        # 目标窗口状态显示
+        win_grp = QGroupBox("目标窗口 (来自窗口检测)")
         win_grp.setObjectName("NeonGroup")
         win_layout = QHBoxLayout()
-        self.edit_title = QLineEdit("异环")
-        self.edit_title.textChanged.connect(lambda text: self.signal_title_changed.emit(text))
-        win_layout.addWidget(QLabel("标题:"))
-        win_layout.addWidget(self.edit_title)
-        self.btn_grab = QPushButton("自动查找")
-        self.btn_grab.clicked.connect(lambda: self.signal_find_window.emit())
-        win_layout.addWidget(self.btn_grab)
-        self.label_hwnd = QLabel("句柄: 未绑定")
+        self.label_hwnd = QLabel("句柄: 未锁定")
         win_layout.addWidget(self.label_hwnd)
         win_grp.setLayout(win_layout)
         layout.addWidget(win_grp)
 
+        # 操作按钮
         btn_layout = QHBoxLayout()
         self.btn_enable = QPushButton("启用宏 (Alt+T)")
         self.btn_enable.setObjectName("NeonButton")
@@ -62,6 +72,7 @@ class MacroPanel(QWidget):
         btn_layout.addWidget(self.btn_record)
         layout.addLayout(btn_layout)
 
+        # 配置区域
         cfg_layout = QHBoxLayout()
         self.btn_save = QPushButton("保存配置")
         self.btn_load = QPushButton("加载配置")
@@ -79,6 +90,7 @@ class MacroPanel(QWidget):
         cfg_layout.addWidget(self.spin_loop)
         layout.addLayout(cfg_layout)
 
+        # 宏指令列表
         script_grp = QGroupBox("宏指令列表")
         script_grp.setObjectName("NeonGroup")
         vbox = QVBoxLayout(script_grp)
@@ -101,13 +113,19 @@ class MacroPanel(QWidget):
             QLineEdit, QSpinBox { background-color: #2a2a3a; color: #0f0; border: 1px solid #0f0; padding: 3px; }
         """)
 
+    def refresh_hwnd(self):
+        hwnd = get_game_hwnd()
+        if hwnd:
+            title = win32gui.GetWindowText(hwnd)
+            self.label_hwnd.setText(f"已锁定: {title[:30]} (句柄: {hwnd})")
+        else:
+            self.label_hwnd.setText("句柄: 未锁定（请在窗口检测中锁定目标窗口）")
+
     def connect_signals(self):
         self.signal_toggle_record.connect(self.core.toggle_record)
         self.signal_toggle_macro.connect(self.core.toggle_macro)
         self.signal_save_config.connect(self.core.save_config)
         self.signal_load_config.connect(self._load_config_and_update_ui)
-        self.signal_find_window.connect(lambda: self.core.find_window(self.edit_title.text()))
-        self.signal_title_changed.connect(lambda title: setattr(self.core, 'target_title', title))
         self.signal_loop_changed.connect(lambda val: setattr(self.core, 'loop_count', val))
 
         self.core.recording_state_changed.connect(self._on_recording_state, Qt.QueuedConnection)
@@ -115,9 +133,8 @@ class MacroPanel(QWidget):
         self.core.hwnd_updated.connect(self.set_hwnd_label, Qt.QueuedConnection)
 
     def _load_config_and_update_ui(self):
-        success, title, loop, actions = self.core.load_config()
+        success, loop, actions = self.core.load_config()
         if success:
-            self.edit_title.setText(title)
             self.spin_loop.setValue(loop)
             self.update_script_display(actions)
 
@@ -145,7 +162,54 @@ class MacroPanel(QWidget):
     def set_hwnd_label(self, text):
         self.label_hwnd.setText(text)
 
+    # ========== 全局热键 ==========
+    def _register_global_hotkeys(self):
+        """延迟注册全局热键，避免启动卡顿"""
+        if not HAS_KEYBOARD:
+            logui.warning("keyboard 库未安装，无法注册全局热键，宏模块的快捷键将仅在程序激活时有效")
+            self.status_label.setText("⚠ 全局热键不可用，请安装 keyboard 库")
+            return
+
+        try:
+            # 清除可能残留的热键
+            self._unregister_global_hotkeys()
+
+            # 注册 Alt+Y 触发录制/停止
+            self.hotkey_alt_y = keyboard.add_hotkey('alt+y', self._on_alt_y, suppress=False)
+            # 注册 Alt+T 触发回放/停止
+            self.hotkey_alt_t = keyboard.add_hotkey('alt+t', self._on_alt_t, suppress=False)
+
+            logui.info("全局热键已注册: Alt+Y (录制/停止), Alt+T (回放/停止)")
+            self.status_label.setText("全局热键已就绪: Alt+Y, Alt+T")
+        except Exception as e:
+            logui.error(f"注册全局热键失败: {e}")
+            self.status_label.setText("全局热键注册失败，可能需要管理员权限")
+
+    def _unregister_global_hotkeys(self):
+        if self.hotkey_alt_y:
+            try:
+                keyboard.remove_hotkey(self.hotkey_alt_y)
+            except:
+                pass
+            self.hotkey_alt_y = None
+        if self.hotkey_alt_t:
+            try:
+                keyboard.remove_hotkey(self.hotkey_alt_t)
+            except:
+                pass
+            self.hotkey_alt_t = None
+
+    def _on_alt_y(self):
+        """全局热键 Alt+Y 回调（keyboard 线程中）"""
+        QTimer.singleShot(0, self.signal_toggle_record.emit)
+
+    def _on_alt_t(self):
+        """全局热键 Alt+T 回调"""
+        QTimer.singleShot(0, self.signal_toggle_macro.emit)
+
     def closeEvent(self, event):
+        self.hwnd_timer.stop()
+        self._unregister_global_hotkeys()
         self.core.cleanup()
         event.accept()
 
