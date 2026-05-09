@@ -45,7 +45,7 @@ class TaskUI(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(10)
 
-        hint = QLabel("不要点击自动任务哦！不然无法识别")
+        hint = QLabel("游戏内不要点击自动对话！不然无法识别")
         hint.setStyleSheet("color: #ffaa00; font-size: 14px;")
         hint.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(hint)
