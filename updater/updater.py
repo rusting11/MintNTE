@@ -20,9 +20,10 @@ API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
 def _get_local_version_path():
     if getattr(sys, 'frozen', False):
-        # 从 exe 所在目录读取 version.txt，而不是从打包的内部临时目录读取
+        # 打包后：exe 所在的真实目录
         return Path(os.path.dirname(sys.executable)) / "version.txt"
     else:
+        # 开发环境：项目根目录
         return Path(__file__).resolve().parent.parent / "version.txt"
 
 def read_local_version():
@@ -137,7 +138,14 @@ class DownloadUpdateThread(QThread):
             self.finished.emit(False, "")
             return
 
-        app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # 关键：确定更新目标目录和重启目标
+        if getattr(sys, 'frozen', False):
+            app_root = os.path.dirname(sys.executable)          # exe 所在目录
+            real_exe = sys.executable
+        else:
+            app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 项目根目录
+            real_exe = os.path.join(app_root, "main.py")
+
         helper_temp_path = os.path.join(tempfile.gettempdir(), "mint_updater_helper.py")
         helper_code = f'''
 import os, sys, time, shutil, logging, psutil, subprocess
@@ -147,7 +155,6 @@ logging.basicConfig(filename=LOG_PATH, level=logging.INFO,
                     format='%(asctime)s - %(message)s')
 
 def force_remove(path):
-    """强制删除文件或目录，尝试5次"""
     for _ in range(5):
         try:
             if os.path.isdir(path):
@@ -162,7 +169,6 @@ def force_remove(path):
     return False
 
 def wait_old_exe_gone():
-    """等待旧版MintNTE.exe完全退出"""
     for _ in range(10):
         found = False
         for proc in psutil.process_iter(['name']):
@@ -182,7 +188,7 @@ def main():
 
         old_root = r"{app_root}"
         new_root = r"{extract_dir}"
-        main_script = r"{os.path.join(app_root, 'main.py')}"
+        target_exe = r"{real_exe}"
 
         for item in os.listdir(new_root):
             s = os.path.join(new_root, item)
@@ -194,10 +200,7 @@ def main():
             ]:
                 continue
 
-            # 强制删除旧目标（解决占用问题）
             force_remove(d)
-
-            # 复制新文件
             for attempt in range(3):
                 try:
                     if os.path.isdir(s):
@@ -208,9 +211,8 @@ def main():
                 except Exception as e:
                     logging.warning(f"复制 {{s}} 失败 (第{{attempt+1}}次): {{e}}")
                     time.sleep(2)
-                    force_remove(d)   # 再次尝试删除
+                    force_remove(d)
 
-        # 覆盖版本文件（同样强制删除）
         version_src = os.path.join(new_root, "version.txt")
         version_dst = os.path.join(old_root, "version.txt")
         if os.path.exists(version_src):
@@ -218,7 +220,7 @@ def main():
             shutil.copy2(version_src, version_dst)
 
         logging.info("文件替换完成，启动新程序")
-        os.execl(sys.executable, sys.executable, main_script)
+        os.execl(target_exe, target_exe, target_exe)
     except Exception as e:
         logging.error(str(e))
 
