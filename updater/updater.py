@@ -42,7 +42,6 @@ def read_local_version():
 
 
 def parse_version(v_str):
-    """将版本号字符串转换为元组，用于比较"""
     try:
         return tuple(map(int, v_str.split('.')))
     except:
@@ -69,7 +68,6 @@ class CheckUpdateThread(QThread):
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode())
             remote_tag = data.get("tag_name", "0.0.0").lstrip("v")
-            # 只有远程版本大于本地版本时才需要更新
             needs_update = parse_version(remote_tag) > parse_version(local)
             if not self._cancel:
                 self.finished.emit(needs_update, remote_tag)
@@ -168,7 +166,7 @@ class DownloadUpdateThread(QThread):
 
         helper_temp_path = os.path.join(tempfile.gettempdir(), "mint_updater_helper.py")
         helper_code = f'''
-import os, sys, time, shutil, logging, psutil, subprocess
+import os, sys, time, shutil, logging, psutil
 
 LOG_PATH = r"{os.path.join(tempfile.gettempdir(), 'mint_updater.log')}"
 logging.basicConfig(filename=LOG_PATH, level=logging.INFO,
@@ -183,51 +181,43 @@ def force_remove(path):
                 if os.path.exists(path):
                     os.remove(path)
             return True
-        except Exception as e:
-            logging.warning(f"删除 {{path}} 失败: {{e}}")
-            time.sleep(1)
-    return False
-
-def wait_old_exe_gone():
-    for _ in range(20):
-        try:
-            running = any(p.name().lower() == "mintnte.exe" for p in psutil.process_iter(['name']))
-            if not running:
-                return True
         except:
-            pass
-        time.sleep(0.8)
+            time.sleep(1)
     return False
 
 def main():
     try:
         logging.info("更新脚本启动")
-        wait_old_exe_gone()
-        time.sleep(1)
+        # 等待旧进程退出
+        for _ in range(20):
+            try:
+                running = any(p.name().lower() == "mintnte.exe" for p in psutil.process_iter(['name']))
+                if not running:
+                    break
+            except:
+                pass
+            time.sleep(0.8)
 
         old_root = r"{app_root}"
         new_root = r"{extract_dir}"
 
-        ignore_list = [
-            "nte_bohe.log", "fortissimo.log", "debug_screenshot.png",
-            "macro_config.json", ".git", "__pycache__", "PIP.txt", "tools"
-        ]
+        ignore = ["nte_bohe.log", "fortissimo.log", "debug_screenshot.png",
+                  "macro_config.json", ".git", "__pycache__", "PIP.txt", "tools"]
 
         for item in os.listdir(new_root):
-            if item in ignore_list:
+            if item in ignore:
                 continue
             s = os.path.join(new_root, item)
             d = os.path.join(old_root, item)
             force_remove(d)
-            for attempt in range(3):
+            for _ in range(3):
                 try:
                     if os.path.isdir(s):
                         shutil.copytree(s, d, dirs_exist_ok=True)
                     else:
                         shutil.copy2(s, d)
                     break
-                except Exception as e:
-                    logging.warning(f"复制 {{s}} 失败: {{e}}")
+                except:
                     time.sleep(1.5)
                     force_remove(d)
 
@@ -240,13 +230,14 @@ def main():
         logging.info("文件替换完成，启动新程序")
         target_exe = os.path.join(old_root, "MintNTE.exe")
         if os.path.exists(target_exe):
-            subprocess.Popen([target_exe], shell=True, close_fds=True)
+            os.startfile(target_exe)                     # 👈 关键修复：独立启动，不占用
         else:
-            subprocess.Popen([sys.executable, os.path.join(old_root, "main.py")], shell=True)
-        sys.exit(0)
+            os.startfile(os.path.join(old_root, "main.py"))
+
+        os._exit(0)                                     # 自杀，不残留
     except Exception as e:
         logging.error(f"更新失败: {{e}}")
-        sys.exit(1)
+        os._exit(1)
 
 if __name__ == "__main__":
     main()
