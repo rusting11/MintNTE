@@ -27,7 +27,20 @@ def read_local_version():
     path = _get_local_version_path()
     if not path.exists():
         return "0.0.0"
-    return path.read_text(encoding='utf-8').strip()
+    raw = path.read_bytes()
+    # 移除 BOM
+    if raw.startswith(b'\xff\xfe'):
+        text = raw[2:].decode('utf-16-le')
+    elif raw.startswith(b'\xfe\xff'):
+        text = raw[2:].decode('utf-16-be')
+    elif raw.startswith(b'\xef\xbb\xbf'):
+        text = raw[3:].decode('utf-8')
+    else:
+        try:
+            text = raw.decode('utf-8')
+        except UnicodeDecodeError:
+            text = raw.decode('utf-16-le')
+    return text.strip()
 
 def read_skip_version():
     path = _get_root_dir() / "skip_version.txt"
