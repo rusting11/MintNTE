@@ -20,7 +20,8 @@ API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
 def _get_local_version_path():
     if getattr(sys, 'frozen', False):
-        return Path(sys._MEIPASS) / "version.txt"
+        # 从 exe 所在目录读取 version.txt，而不是从打包的内部临时目录读取
+        return Path(os.path.dirname(sys.executable)) / "version.txt"
     else:
         return Path(__file__).resolve().parent.parent / "version.txt"
 
