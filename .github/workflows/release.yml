@@ -15,18 +15,20 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: 设置 Python
-        uses: actions/setup-python@v4          # ← 回退到 v4（最稳定）
-        with:
-          python-version: '3.10'
+      - name: 确认 Python 环境
+        shell: pwsh
+        run: |
+          # windows-latest 镜像已内置 Python 3.10，直接使用
+          python --version
+          python -m pip install --upgrade pip
 
       - name: 安装依赖
+        shell: pwsh
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 打包为 MintNTE.exe
-        shell: powershell
+      - name: 打包 MintNTE.exe
+        shell: pwsh
         run: |
           pyinstaller --noconfirm --onefile --noconsole `
             --name MintNTE `
@@ -59,7 +61,7 @@ jobs:
             main.py
 
       - name: 打包完整源码 (MintNTE.zip)
-        shell: powershell
+        shell: pwsh
         run: |
           $pkgDir = "pkg_temp"
           New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
@@ -77,12 +79,12 @@ jobs:
 
       - name: 计算 SHA256
         id: sha256
-        shell: powershell
+        shell: pwsh
         run: |
           $sha = (Get-FileHash -Algorithm SHA256 "MintNTE.zip").Hash.ToLower()
-          "sha=$sha" >> $env:GITHUB_OUTPUT
+          echo "sha=$sha" >> $env:GITHUB_OUTPUT
 
-      - name: 创建 Release 并上传
+      - name: 发布 Release
         uses: softprops/action-gh-release@v3
         with:
           name: ${{ github.ref_name }}
