@@ -1,7 +1,20 @@
 # main.py (完整最终版)
-import sys
-import os
-import ctypes
+import sys, os, ctypes, atexit, shutil, tempfile
+
+# 隐藏 PyInstaller 单文件模式的清理失败弹窗
+if getattr(sys, 'frozen', False):
+    def _silent_cleanup():
+        try:
+            temp_dir = os.path.join(tempfile.gettempdir(), f"_MEI{os.getpid()}")
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+        except:
+            pass
+    atexit.register(_silent_cleanup)
+    try:
+        ctypes.windll.user32.SetErrorMode(0x8000)  # SEM_NOGPFAULTERRORBOX
+    except:
+        pass
 
 # ================= 管理员提权（ShellExecute） =================
 def is_admin():
@@ -11,15 +24,9 @@ def is_admin():
         return False
 
 def elevate():
-    """使用 Windows ShellExecute 提权重启自身，无额外控制台窗口"""
     params = " ".join([f'"{os.path.abspath(__file__)}"'] + sys.argv[1:])
     ctypes.windll.shell32.ShellExecuteW(
-        None,               # 父窗口句柄
-        "runas",            # 以管理员身份运行
-        sys.executable,     # Python 解释器
-        params,             # 参数
-        None,               # 工作目录
-        1                   # SW_SHOWNORMAL
+        None, "runas", sys.executable, params, None, 1
     )
     sys.exit()
 
@@ -31,7 +38,7 @@ os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel
 from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtGui import QPixmap, QIcon      # ← 添加了 QIcon
+from PyQt5.QtGui import QPixmap, QIcon
 import pygame
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -41,23 +48,19 @@ class SplashScreen(QWidget):
         super().__init__()
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-
         pixmap = QPixmap(image_path)
         if pixmap.isNull():
             print(f"错误：无法加载图片 {image_path}")
             sys.exit(1)
-
         self.setFixedSize(pixmap.width(), pixmap.height())
         label = QLabel(self)
         label.setPixmap(pixmap)
         label.setScaledContents(True)
         label.resize(self.size())
-
         screen = QApplication.primaryScreen().geometry()
         x = (screen.width() - self.width()) // 2
         y = (screen.height() - self.height()) // 2
         self.move(x, y)
-
         self.show()
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.close)
@@ -69,9 +72,7 @@ class SplashScreen(QWidget):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
 
-    # 设置应用图标（任务栏和窗口标题栏）
     app.setWindowIcon(QIcon(os.path.join(BASE_DIR, "Image", "logo", "titlelogo.ico")))
-    # 第一次锁定任务栏图标
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('daoqi.MintNTE')
 
     from UI.logui import setup_logging, info
@@ -99,10 +100,8 @@ if __name__ == "__main__":
     main_window = MainUI()
     main_window.show()
 
-    # 启动画面关闭后，再次强制锁定任务栏图标，防止弹窗后丢失
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('daoqi.MintNTE')
-    # 广播系统设置变更消息，强制任务栏刷新图标
-    ctypes.windll.user32.SendMessageW(0xFFFF, 0x001A, 0, 0)  # HWND_BROADCAST + WM_SETTINGCHANGE
+    ctypes.windll.user32.SendMessageW(0xFFFF, 0x001A, 0, 0)
 
     main_window.auto_check_update()
 

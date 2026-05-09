@@ -1,16 +1,5 @@
-import os
-import sys
-import hashlib
-import urllib.request
-import urllib.error
-import json
-import tempfile
-import zipfile
-import shutil
-import time
-import subprocess
-import re
-import psutil
+# updater/updater.py
+import os, sys, hashlib, urllib.request, urllib.error, json, tempfile, zipfile, shutil, time, subprocess, re, psutil, ctypes
 from pathlib import Path
 from PyQt5.QtCore import QObject, pyqtSignal, QThread
 
@@ -187,7 +176,6 @@ def force_remove(path):
 def main():
     try:
         logging.info("更新脚本启动")
-        # 等待旧进程退出
         for _ in range(20):
             try:
                 running = any(p.name().lower() == "mintnte.exe" for p in psutil.process_iter(['name']))
@@ -232,7 +220,6 @@ def main():
             os.startfile(target_exe)
         else:
             os.startfile(os.path.join(old_root, "main.py"))
-
         os._exit(0)
     except Exception as e:
         logging.error(f"更新失败: {{e}}")
@@ -319,7 +306,14 @@ class Updater(QObject):
 
     def _on_download_finished(self, success, version):
         if success:
-            # ✅ 终极修复：彻底杀死进程，不占临时目录
+            time.sleep(0.5)
+            # ✅ 管理员身份启动新程序
+            if getattr(sys, 'frozen', False):
+                target_exe = os.path.join(os.path.dirname(sys.executable), "MintNTE.exe")
+                if os.path.exists(target_exe):
+                    ctypes.windll.shell32.ShellExecuteW(
+                        None, "runas", target_exe, None, None, 1
+                    )
             os._exit(0)
         else:
             self.finished.emit(False, version)
