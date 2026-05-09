@@ -13,7 +13,7 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
 
       - name: 确认 Python 环境
         shell: pwsh
@@ -35,10 +35,10 @@ jobs:
             --add-data "Image;Image" `
             --add-data "core;core" `
             --add-data "core/fishing/fishingimages;fishingimages" `
+            --add-data "core/fishing/fishingimages/rank_fish;rank_fish" `
             --add-data "Module;Module" `
             --add-data "UI;UI" `
             --add-data "updater;updater" `
-            --add-data "tools;tools" `
             --add-data "version.txt;." `
             --hidden-import=pygame `
             --hidden-import=dxcam `
@@ -57,27 +57,23 @@ jobs:
             --hidden-import=psutil `
             --collect-all dxcam `
             --collect-all pydirectinput `
+            --collect-all windows_capture `
             main.py
 
       - name: 打包完整源码 (MintNTE.zip)
         shell: pwsh
         run: |
-          # 使用系统临时目录，避免自身冲突
           $tmp = [System.IO.Path]::GetTempPath()
           $pkgDir = Join-Path $tmp "mint_src_pkg"
           New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
-          # 复制当前目录所有文件到临时文件夹（排除 pkgDir 自身）
           Get-ChildItem -Path . -Exclude $pkgDir | Copy-Item -Destination $pkgDir -Recurse -Force
-          # 删除不需要的文件/文件夹
           Remove-Item -Recurse -Force "$pkgDir\.git" -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force "$pkgDir\__pycache__" -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force "$pkgDir\dist" -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force "$pkgDir\build" -ErrorAction SilentlyContinue
-          Remove-Item -Recurse -Force "$pkgDir\tools" -ErrorAction SilentlyContinue
           Remove-Item -Force "$pkgDir\*.log" -ErrorAction SilentlyContinue
           Remove-Item -Force "$pkgDir\debug_screenshot.png" -ErrorAction SilentlyContinue
           Remove-Item -Force "$pkgDir\macro_config.json" -ErrorAction SilentlyContinue
-          # 在项目根目录生成 ZIP
           Compress-Archive -Path "$pkgDir\*" -DestinationPath "MintNTE.zip" -Force
           Remove-Item -Recurse -Force $pkgDir
 
