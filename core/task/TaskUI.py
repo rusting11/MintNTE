@@ -53,7 +53,7 @@ class TaskUI(QWidget):
         opts_layout = QHBoxLayout()
         self.cb_skip = QCheckBox("自动跳过任务")
         self.cb_skip.setChecked(True)
-        self.cb_no_remind = QCheckBox("不再提示跳过")
+        self.cb_no_remind = QCheckBox("今日不再提示跳过")
         self.cb_no_remind.setChecked(True)
         opts_layout.addWidget(self.cb_skip)
         opts_layout.addWidget(self.cb_no_remind)
