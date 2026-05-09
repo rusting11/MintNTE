@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QVBoxLayout,
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QFont
 import ctypes
-
+from UI import logui
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
@@ -107,7 +107,7 @@ class MainUI(QMainWindow):
 
     # ================= 更新相关方法 =================
     def manual_check_update(self):
-        """用户点击“自动更新”按钮"""
+        """点击“自动更新”按钮"""
         self._checking_manual = True
         self.update_status.setVisible(True)
         self.update_progress.setVisible(True)
@@ -121,38 +121,31 @@ class MainUI(QMainWindow):
         self.updater.check_for_update()
 
     def on_check_result(self, status, info):
-        """
-        status: -1=错误, 0=无更新或已跳过, 1=发现新版本
-        info: 版本号 或 错误描述
-        """
         if status == -1:
             if self._checking_manual:
-                QMessageBox.warning(self, "检查更新失败",
-                                    f"无法获取更新信息：\n{info}")
+                QMessageBox.warning(self, "检查更新失败", f"无法获取更新信息：\n{info}")
         elif status == 1:
             local = self.updater.get_local_version()
             box = QMessageBox(self)
             box.setWindowTitle("发现新版本")
-            box.setText(f"当前版本: {local}\n最新版本: {info}\n是否立即更新？\n"
-                        "更新失败可加群下载最新版。")
-            btn_update = box.addButton("立即更新", QMessageBox.YesRole)
+            box.setText(f"当前版本: {local}\n最新版本: {info}\n是否立即更新？\n更新失败可加群下载最新版。")
+            btn_update = box.addButton("立即更新", QMessageBox.AcceptRole)
             btn_skip = box.addButton(f"跳过此版本({info})", QMessageBox.NoRole)
             btn_no = box.addButton("暂不更新", QMessageBox.RejectRole)
             box.setDefaultButton(btn_update)
-            box.exec_()
+            ret = box.exec_()
 
-            clicked = box.clickedButton()
-            if clicked == btn_update:
+            if box.clickedButton() == btn_update:
+                # 调用更新
                 self.update_progress.setVisible(True)
                 self.update_status.setVisible(True)
                 self.update_status.setText("准备下载...")
                 self.updater.perform_update()
-            elif clicked == btn_skip:
+            elif box.clickedButton() == btn_skip:
                 self.updater.skip_this_version(info)
-        else:  # status == 0
+        else:
             if self._checking_manual:
                 QMessageBox.information(self, "检查更新", "当前已是最新版本。")
-
         self._hide_update_ui()
         self._checking_manual = False
 

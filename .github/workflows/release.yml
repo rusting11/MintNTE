@@ -11,7 +11,6 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -28,10 +27,51 @@ jobs:
 
       - name: 安装依赖
         shell: pwsh
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
-      - name: 打包 MintNTE（onedir）
+      # 打包单文件 exe（首次分发用）
+      - name: 打包 MintNTE.exe (onefile)
+        shell: pwsh
+        run: |
+          $pythonHome = python -c "import sys; print(sys.base_prefix)"
+          $dll = Join-Path $pythonHome "python310.dll"
+          if (-not (Test-Path $dll)) { $dll = Join-Path $pythonHome "python3.dll" }
+          Copy-Item $dll -Destination "python310.dll" -Force
+          pyinstaller --noconfirm --onefile --noconsole --clean `
+            --name MintNTE `
+            --icon "Image/logo/titlelogo.ico" `
+            --add-data "Image;Image" `
+            --add-data "core;core" `
+            --add-data "core/fishing/fishingimages;fishingimages" `
+            --add-data "core/fishing/fishingimages/rank_fish;rank_fish" `
+            --add-data "Module;Module" `
+            --add-data "UI;UI" `
+            --add-data "updater;updater" `
+            --add-data "version.txt;." `
+            --add-binary "python310.dll;." `
+            --hidden-import=pygame `
+            --hidden-import=dxcam `
+            --hidden-import=pydirectinput `
+            --hidden-import=keyboard `
+            --hidden-import=mouse `
+            --hidden-import=cv2 `
+            --hidden-import=numpy `
+            --hidden-import=PIL `
+            --hidden-import=win32gui `
+            --hidden-import=win32ui `
+            --hidden-import=win32con `
+            --hidden-import=ctypes `
+            --hidden-import=comtypes `
+            --hidden-import=logging `
+            --hidden-import=psutil `
+            --collect-all dxcam `
+            --collect-all pydirectinput `
+            --collect-all windows_capture `
+            main.py
+          Copy-Item "dist\MintNTE.exe" "MintNTE_Release.exe"
+
+      # 打包 onedir（用来生成更新压缩包）
+      - name: 打包 MintNTE 目录 (onedir)
         shell: pwsh
         run: |
           pyinstaller --noconfirm --onedir --noconsole --clean `
@@ -65,10 +105,9 @@ jobs:
             --collect-all windows_capture `
             main.py
 
-      - name: 打包可运行目录为更新包 (MintNTE.zip)
+      - name: 生成更新包 MintNTE.zip
         shell: pwsh
-        run: |
-          Compress-Archive -Path "dist\MintNTE\*" -DestinationPath "MintNTE.zip" -Force
+        run: Compress-Archive -Path "dist\MintNTE\*" -DestinationPath "MintNTE.zip" -Force
 
       - name: 计算 SHA256
         id: sha256
@@ -85,6 +124,7 @@ jobs:
             版本 ${{ github.ref_name }}
             Zip SHA256: ${{ steps.sha256.outputs.sha }}
           files: |
+            MintNTE_Release.exe
             MintNTE.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
