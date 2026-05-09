@@ -26,13 +26,41 @@ jobs:
           python --version
           python -m pip install --upgrade pip
 
-      - name: 安装依赖
+      - name: 安装 VC++ 运行库（打包环境）
+        shell: pwsh
+        run: |
+          # 安装 Visual C++ 2015-2022 运行库，确保打包时 DLL 依赖齐全
+          $url = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+          Invoke-WebRequest -Uri $url -OutFile "vc_redist.exe"
+          Start-Process -Wait -FilePath ".\vc_redist.exe" -ArgumentList "/install /quiet /norestart"
+          Write-Host "VC++ runtime installed"
+
+      - name: 安装 Python 依赖
         shell: pwsh
         run: |
           pip install -r requirements.txt
-      - name: 打包 MintNTE.exe
+
+      - name: 打包 MintNTE.exe (强制内含 python310.dll)
         shell: pwsh
         run: |
+          # 1. 定位并复制 Python 核心 DLL 到当前目录
+          $pythonHome = python -c "import sys; print(sys.base_prefix)"
+          $dllName = "python310.dll"
+          $dllPath = Join-Path $pythonHome $dllName
+          if (-not (Test-Path $dllPath)) {
+            # 如果找不到 python310.dll，尝试 python3.dll（某些版本）
+            $dllName = "python3.dll"
+            $dllPath = Join-Path $pythonHome $dllName
+          }
+          if (Test-Path $dllPath) {
+            Copy-Item $dllPath -Destination $dllName -Force
+            Write-Host "Copied $dllName from $pythonHome"
+          } else {
+            Write-Host "ERROR: Core Python DLL not found! Exiting."
+            exit 1
+          }
+
+          # 2. 打包，使用 --add-binary 强制包含
           pyinstaller --noconfirm --onefile --noconsole `
             --name MintNTE `
             --icon "Image/logo/titlelogo.ico" `
@@ -44,6 +72,7 @@ jobs:
             --add-data "UI;UI" `
             --add-data "updater;updater" `
             --add-data "version.txt;." `
+            --add-binary "${dllName};." `
             --hidden-import=pygame `
             --hidden-import=dxcam `
             --hidden-import=pydirectinput `
