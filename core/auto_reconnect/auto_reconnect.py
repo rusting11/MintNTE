@@ -1,4 +1,6 @@
+# D:\Github\NTE_boheAI\core\auto_reconnect\auto_reconnect.py
 import os
+
 import sys
 import random
 import cv2

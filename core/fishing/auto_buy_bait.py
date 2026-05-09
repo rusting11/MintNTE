@@ -1,3 +1,4 @@
+# D:\Github\NTE_boheAI\core\fishing\auto_buy_bait.py
 import time
 import random
 import sys
