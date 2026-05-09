@@ -15,9 +15,15 @@ def _get_root_dir():
         return Path(os.path.dirname(sys.executable))
     else:
         return Path(__file__).resolve().parent.parent
-
+def _get_local_version_path():
+    if getattr(sys, 'frozen', False):
+        # 打包后 version.txt 一定在 sys._MEIPASS 的根目录
+        return Path(sys._MEIPASS) / "version.txt"
+    else:
+        # 源码运行时在项目根目录
+        return Path(__file__).resolve().parent.parent / "version.txt"
 def read_local_version():
-    path = _get_root_dir() / "version.txt"
+    path = _get_local_version_path()
     if not path.exists():
         return "0.0.0"
     try:
