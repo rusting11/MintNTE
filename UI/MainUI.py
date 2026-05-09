@@ -150,6 +150,9 @@ class MainUI(QMainWindow):
 
     def _global_hotkey(self):
         cur = self.tab_widget.currentWidget()
+        # 如果当前是任务页面，则不拦截，让任务页自己的快捷键生效
+        if isinstance(cur, TaskUI):
+            return
         if hasattr(cur, 'toggle_fishing'):
             cur.toggle_fishing()
         elif hasattr(cur, 'toggle_run'):
