@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: 设置 Python
-        uses: actions/setup-python@v5         # ← 改回 v5（v6 不存在）
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
@@ -28,7 +28,7 @@ jobs:
       - name: 打包为 MintNTE.exe
         shell: powershell
         run: |
-          pyinstaller --noconfirm --onefile --console `
+          pyinstaller --noconfirm --onefile --noconsole `
             --name MintNTE `
             --icon "Image/logo/titlelogo.ico" `
             --add-data "Image;Image" `
@@ -40,6 +40,7 @@ jobs:
             --add-data "tools;tools" `
             --add-data "version.txt;." `
             --hidden-import=pygame `
+            --hidden-import=dxcam `
             --hidden-import=pydirectinput `
             --hidden-import=keyboard `
             --hidden-import=mouse `
@@ -50,8 +51,8 @@ jobs:
             --hidden-import=win32ui `
             --hidden-import=win32con `
             --hidden-import=ctypes `
-            --hidden-import=dxcam `
             --hidden-import=comtypes `
+            --hidden-import=logging `
             --collect-all dxcam `
             --collect-all pydirectinput `
             main.py
@@ -61,7 +62,6 @@ jobs:
         run: |
           $tempDir = "temp_pkg"
           New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
-          # 只复制需要打包的文件，排除临时目录和构建产物
           Get-ChildItem -Exclude @('.git','__pycache__','*.log','debug_screenshot.png','macro_config.json','.github','tools','build','dist','temp_pkg') | 
             Copy-Item -Recurse -Force -Destination $tempDir
           Compress-Archive -Path "$tempDir\*" -DestinationPath "NTE-ai.zip" -Force
