@@ -1,4 +1,3 @@
-# updater/updater.py
 import os
 import sys
 import hashlib
@@ -230,11 +229,11 @@ def main():
         logging.info("文件替换完成，启动新程序")
         target_exe = os.path.join(old_root, "MintNTE.exe")
         if os.path.exists(target_exe):
-            os.startfile(target_exe)                     # 👈 关键修复：独立启动，不占用
+            os.startfile(target_exe)
         else:
             os.startfile(os.path.join(old_root, "main.py"))
 
-        os._exit(0)                                     # 自杀，不残留
+        os._exit(0)
     except Exception as e:
         logging.error(f"更新失败: {{e}}")
         os._exit(1)
@@ -320,7 +319,7 @@ class Updater(QObject):
 
     def _on_download_finished(self, success, version):
         if success:
-            time.sleep(0.5)
-            sys.exit(0)
+            # ✅ 终极修复：彻底杀死进程，不占临时目录
+            os._exit(0)
         else:
             self.finished.emit(False, version)
