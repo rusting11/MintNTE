@@ -18,13 +18,16 @@ from PyQt5.QtCore import QObject, pyqtSignal, QThread
 GITHUB_REPO = "daoqi/MintNTE"
 API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
+
 def _get_local_version_path():
     if getattr(sys, 'frozen', False):
-        # 打包后：exe 所在的真实目录
-        return Path(os.path.dirname(sys.executable)) / "version.txt"
+        external = Path(os.path.dirname(sys.executable)) / "version.txt"
+        if external.exists():
+            return external
+        return Path(sys._MEIPASS) / "version.txt"
     else:
-        # 开发环境：项目根目录
         return Path(__file__).resolve().parent.parent / "version.txt"
+
 
 def read_local_version():
     path = _get_local_version_path()
@@ -36,6 +39,15 @@ def read_local_version():
         except:
             continue
     return "0.0.0"
+
+
+def parse_version(v_str):
+    """将版本号字符串转换为元组，用于比较"""
+    try:
+        return tuple(map(int, v_str.split('.')))
+    except:
+        return (0, 0, 0)
+
 
 class CheckUpdateThread(QThread):
     finished = pyqtSignal(bool, str)
@@ -49,19 +61,22 @@ class CheckUpdateThread(QThread):
         self.wait(2000)
 
     def run(self):
-        if self._cancel: return
+        if self._cancel:
+            return
         local = read_local_version()
         try:
             req = urllib.request.Request(API_URL, headers={"User-Agent": "Mozilla/5.0"})
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode())
             remote_tag = data.get("tag_name", "0.0.0").lstrip("v")
-            needs_update = local != remote_tag
+            # 只有远程版本大于本地版本时才需要更新
+            needs_update = parse_version(remote_tag) > parse_version(local)
             if not self._cancel:
                 self.finished.emit(needs_update, remote_tag)
         except Exception:
             if not self._cancel:
                 self.finished.emit(False, "")
+
 
 class DownloadUpdateThread(QThread):
     progress = pyqtSignal(int)
@@ -88,7 +103,8 @@ class DownloadUpdateThread(QThread):
                 self.finished.emit(False, "")
             return
 
-        if self._cancel: return
+        if self._cancel:
+            return
         assets = data.get("assets", [])
         if not assets:
             self.status.emit("没有可下载的更新包")
@@ -122,7 +138,7 @@ class DownloadUpdateThread(QThread):
             self.progress.emit(0)
             actual_sha = self._sha256_file(zip_path)
             if actual_sha != expected_sha256:
-                self.status.emit(f"SHA256 不匹配！")
+                self.status.emit("SHA256 不匹配！")
                 self.finished.emit(False, "")
                 return
             self.status.emit("文件校验通过 ✓")
@@ -138,13 +154,17 @@ class DownloadUpdateThread(QThread):
             self.finished.emit(False, "")
             return
 
-        # 关键：确定更新目标目录和重启目标
+        # 处理压缩包外层文件夹包裹
+        items = os.listdir(extract_dir)
+        if len(items) == 1:
+            single_dir = os.path.join(extract_dir, items[0])
+            if os.path.isdir(single_dir):
+                extract_dir = single_dir
+
         if getattr(sys, 'frozen', False):
-            app_root = os.path.dirname(sys.executable)          # exe 所在目录
-            real_exe = sys.executable
+            app_root = os.path.dirname(sys.executable)
         else:
-            app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 项目根目录
-            real_exe = os.path.join(app_root, "main.py")
+            app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
         helper_temp_path = os.path.join(tempfile.gettempdir(), "mint_updater_helper.py")
         helper_code = f'''
@@ -164,42 +184,40 @@ def force_remove(path):
                     os.remove(path)
             return True
         except Exception as e:
-            logging.warning(f"删除 {{path}} 失败: {{e}}, 重试...")
+            logging.warning(f"删除 {{path}} 失败: {{e}}")
             time.sleep(1)
     return False
 
 def wait_old_exe_gone():
-    for _ in range(10):
-        found = False
-        for proc in psutil.process_iter(['name']):
-            if proc.info['name'] and proc.info['name'].lower() == 'mintnte.exe':
-                found = True
-                break
-        if not found:
-            return True
-        time.sleep(1)
-    logging.warning("旧版MintNTE.exe可能仍在运行")
+    for _ in range(20):
+        try:
+            running = any(p.name().lower() == "mintnte.exe" for p in psutil.process_iter(['name']))
+            if not running:
+                return True
+        except:
+            pass
+        time.sleep(0.8)
     return False
 
 def main():
     try:
         logging.info("更新脚本启动")
         wait_old_exe_gone()
+        time.sleep(1)
 
         old_root = r"{app_root}"
         new_root = r"{extract_dir}"
-        target_exe = r"{real_exe}"
+
+        ignore_list = [
+            "nte_bohe.log", "fortissimo.log", "debug_screenshot.png",
+            "macro_config.json", ".git", "__pycache__", "PIP.txt", "tools"
+        ]
 
         for item in os.listdir(new_root):
+            if item in ignore_list:
+                continue
             s = os.path.join(new_root, item)
             d = os.path.join(old_root, item)
-
-            if item in [
-                "nte_bohe.log", "fortissimo.log", "debug_screenshot.png",
-                "macro_config.json", ".git", "__pycache__", "PIP.txt", "tools"
-            ]:
-                continue
-
             force_remove(d)
             for attempt in range(3):
                 try:
@@ -209,8 +227,8 @@ def main():
                         shutil.copy2(s, d)
                     break
                 except Exception as e:
-                    logging.warning(f"复制 {{s}} 失败 (第{{attempt+1}}次): {{e}}")
-                    time.sleep(2)
+                    logging.warning(f"复制 {{s}} 失败: {{e}}")
+                    time.sleep(1.5)
                     force_remove(d)
 
         version_src = os.path.join(new_root, "version.txt")
@@ -220,13 +238,20 @@ def main():
             shutil.copy2(version_src, version_dst)
 
         logging.info("文件替换完成，启动新程序")
-        os.execl(target_exe, target_exe, target_exe)
+        target_exe = os.path.join(old_root, "MintNTE.exe")
+        if os.path.exists(target_exe):
+            subprocess.Popen([target_exe], shell=True, close_fds=True)
+        else:
+            subprocess.Popen([sys.executable, os.path.join(old_root, "main.py")], shell=True)
+        sys.exit(0)
     except Exception as e:
-        logging.error(str(e))
+        logging.error(f"更新失败: {{e}}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
 '''
+
         with open(helper_temp_path, "w", encoding="utf-8") as f:
             f.write(helper_code)
 
@@ -236,7 +261,6 @@ if __name__ == "__main__":
         time.sleep(1)
         self.status.emit("即将退出并更新...")
         self.finished.emit(True, "")
-        return
 
     def _download_file(self, url, dest):
         try:
@@ -246,15 +270,17 @@ if __name__ == "__main__":
                 downloaded = 0
                 with open(dest, "wb") as f:
                     while True:
-                        if self._cancel: return False
+                        if self._cancel:
+                            return False
                         chunk = resp.read(8192)
-                        if not chunk: break
+                        if not chunk:
+                            break
                         f.write(chunk)
                         downloaded += len(chunk)
                         if total > 0:
                             self.progress.emit(int(downloaded / total * 100))
-                self.progress.emit(100)
-                return True
+            self.progress.emit(100)
+            return True
         except Exception:
             return False
 
@@ -264,9 +290,11 @@ if __name__ == "__main__":
         with open(filepath, "rb") as f:
             while True:
                 chunk = f.read(8192)
-                if not chunk: break
+                if not chunk:
+                    break
                 sha.update(chunk)
         return sha.hexdigest()
+
 
 class Updater(QObject):
     progress = pyqtSignal(int)
