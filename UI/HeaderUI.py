@@ -1,65 +1,45 @@
 # UI/HeaderUI.py
 import os
-from PyQt5.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QDialog, QVBoxLayout, QScrollArea, QMessageBox
-from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtWidgets import QWidget, QHBoxLayout, QLabel, QVBoxLayout
+from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap
 
 
 class HeaderUI(QWidget):
-    checkUpdate_signal = pyqtSignal()
-    toggle_log_signal = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(50)
+        self.setFixedHeight(56)
         self.setObjectName("HeaderWidget")
+        self.setAttribute(Qt.WA_StyledBackground)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 0, 10, 0)
+        layout.setContentsMargins(16, 0, 16, 0)
+        layout.setSpacing(12)
 
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        logo_path = os.path.join(base_dir, "Image", "logo", "titlelogo.ico")
+
+        self.logo_label = QLabel()
+        if os.path.exists(logo_path):
+            pixmap = QPixmap(logo_path)
+            self.logo_label.setPixmap(pixmap.scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        self.logo_label.setFixedSize(36, 36)
+        self.logo_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.logo_label)
+
+        title_layout = QVBoxLayout()
         self.title_label = QLabel("MintNTE")
         self.title_label.setObjectName("TitleLabel")
-        layout.addWidget(self.title_label)
+        title_layout.addWidget(self.title_label, alignment=Qt.AlignLeft)
+
+        subtitle = QLabel("异环自动化助手")
+        subtitle.setObjectName("SubtitleLabel")
+        title_layout.addWidget(subtitle, alignment=Qt.AlignLeft)
+        title_layout.setSpacing(0)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(title_layout)
 
         layout.addStretch()
-
-        self.btn_update = QPushButton("自动更新")
-        self.btn_update.setObjectName("HeaderButton")
-        self.btn_update.clicked.connect(self.checkUpdate_signal.emit)
-        layout.addWidget(self.btn_update)
-
-        self.btn_log = QPushButton("显示日志")
-        self.btn_log.setObjectName("HeaderButton")
-        self.btn_log.clicked.connect(self.toggle_log_signal.emit)
-        layout.addWidget(self.btn_log)
-
-        self.btn_help = QPushButton("设置教程")
-        self.btn_help.setObjectName("HeaderButton")
-        self.btn_help.clicked.connect(self.show_tutorial)
-        layout.addWidget(self.btn_help)
-
-        self.setStyleSheet("""
-        #HeaderWidget {
-            background-color: #1e1e2f;
-            border-bottom: 2px solid #0ff;
-        }
-        #TitleLabel {
-            color: #0ff;
-            font-size: 18px;
-            font-weight: bold;
-        }
-        #HeaderButton {
-            background-color: #2a2a3a;
-            color: #0ff;
-            border: 1px solid #0ff;
-            border-radius: 5px;
-            padding: 5px 10px;
-            min-width: 80px;
-        }
-        #HeaderButton:hover {
-            background-color: #0ff;
-            color: #1e1e2f;
-        }
-        """)
 
     def show_tutorial(self):
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -74,7 +54,6 @@ class HeaderUI(QWidget):
         dialog.setModal(True)
         layout = QVBoxLayout(dialog)
 
-        # 使用滚动区域，100%显示原始图片
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         label = QLabel()

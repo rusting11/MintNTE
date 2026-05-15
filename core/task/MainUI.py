@@ -77,7 +77,6 @@ class MainUI(QMainWindow):
         self.tab_widget.addTab(MahjongUI(), "麻将")
         self.tab_widget.addTab(TaskUI(), "任务")
         self.tab_widget.addTab(self._fortissimo_tab(), "超强音")
-        self.tab_widget.addTab(JoinUsUI(), "加入我们")
         layout.addWidget(self.tab_widget)
 
         # 更新相关的控件
@@ -153,11 +152,11 @@ class MainUI(QMainWindow):
         self.update_status.setVisible(False)
         self.update_progress.setVisible(False)
 
-    # ================= 其他原方法（保持不动） =================
     def apply_theme(self, theme_name):
         qss = get_theme(theme_name)
         self.setStyleSheet(qss)
 
+    # ================= 其他原方法（保持不动） =================
     def _fortissimo_tab(self):
         w = QWidget()
         l = QVBoxLayout(w)

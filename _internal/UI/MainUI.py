@@ -160,11 +160,11 @@ class MainUI(QMainWindow):
         self.update_status.setVisible(False)
         self.update_progress.setVisible(False)
 
-    # ================= 其他原方法（保持不动） =================
     def apply_theme(self, theme_name):
         qss = get_theme(theme_name)
         self.setStyleSheet(qss)
 
+    # ================= 其他原方法（保持不动） =================
     def _fortissimo_tab(self):
         w = QWidget()
         l = QVBoxLayout(w)

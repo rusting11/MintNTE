@@ -261,7 +261,7 @@ class FishingUI(QWidget):
             border-radius: 5px;
             margin-top: 10px;
         }
-        #NeonGroup::title { color: #f0f; }
+        #NeonGroup::title { color: #f0f;font-size: 16px; }
         #StatLabel { color: #0ff; font-size: 16px; font-weight: bold; }
         #BigStartButton {
             background-color: #2a2a3a; color: #0f0; border: 2px solid #0f0;

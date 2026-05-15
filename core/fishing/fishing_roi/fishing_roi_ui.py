@@ -15,6 +15,7 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 from core.fishing.fishing_roi.fishing_roi_core import FishingROICore
+from UI.themes import get_theme
 
 # 基础ROI区域（客户区坐标，未偏移）
 BASE_ROI = (606, 64, 1319, 85)
@@ -116,12 +117,80 @@ class FishingROIWindow(QWidget):
         main_layout.addWidget(right_widget, stretch=1)
         self.setLayout(main_layout)
 
-        self.setStyleSheet("""
-            QGroupBox { color: #0ff; border: 1px solid #0ff; border-radius: 5px; margin-top: 10px; }
-            QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }
-            QLabel { color: #0ff; }
-            QPushButton { background-color: #2a2a3a; color: #0ff; border: 1px solid #0ff; border-radius: 5px; padding: 4px 8px; }
-            QPushButton:hover { background-color: #0ff; color: #1e1e2f; }
+        self.setStyleSheet(get_theme() + """
+            QWidget {
+                background: rgba(20, 22, 35, 0.98);
+                font-family: "Microsoft YaHei", "SimHei", sans-serif;
+            }
+            QGroupBox {
+                background: rgba(30, 33, 52, 0.7);
+                color: rgba(0, 220, 180, 0.95);
+                border: 1px solid rgba(0, 160, 200, 0.3);
+                border-radius: 12px;
+                margin-top: 16px;
+                padding-top: 16px;
+                padding-bottom: 12px;
+                padding-left: 12px;
+                padding-right: 12px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 12px;
+                padding: 0 10px;
+                font-size: 18px;
+                font-weight: 700;
+            }
+            QLabel {
+                color: rgba(180, 210, 240, 0.9);
+                font-size: 16px;
+                min-height: 28px;
+            }
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                    stop:0 rgba(0, 160, 200, 0.32), 
+                    stop:1 rgba(0, 180, 150, 0.22));
+                color: rgba(220, 245, 255, 0.95);
+                border: 1px solid rgba(0, 191, 255, 0.4);
+                border-radius: 10px;
+                padding: 14px 30px;
+                font-size: 18px;
+                font-weight: 500;
+                min-width: 140px;
+                min-height: 48px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                    stop:0 rgba(0, 180, 230, 0.5), 
+                    stop:1 rgba(0, 200, 170, 0.4));
+                border-color: rgba(0, 220, 180, 0.6);
+            }
+            QSlider::groove:horizontal {
+                height: 10px;
+                background: rgba(0, 160, 200, 0.2);
+                border-radius: 5px;
+            }
+            QSlider::handle:horizontal {
+                width: 24px;
+                height: 24px;
+                background: rgba(0, 180, 220, 0.8);
+                border: 2px solid rgba(0, 220, 180, 0.6);
+                border-radius: 12px;
+                margin: -7px 0;
+            }
+            QSpinBox {
+                background: rgba(20, 24, 40, 0.95);
+                color: #ffffff;
+                border: 1px solid rgba(0, 160, 200, 0.35);
+                border-radius: 10px;
+                padding: 10px 14px;
+                font-size: 18px;
+                min-width: 80px;
+                min-height: 40px;
+            }
+            QLineEdit {
+                font-size: 16px;
+                padding: 8px 12px;
+            }
         """)
 
     def get_current_roi(self):
