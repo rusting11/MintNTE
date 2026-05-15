@@ -46,10 +46,34 @@ class FishingROIWindow(QWidget):
         # 左侧画面显示
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(0)
+
+        img_frame = QWidget()
+        img_frame.setObjectName("ImageFrame")
+        img_frame.setMinimumSize(800, 600)
+        img_frame.setStyleSheet("""
+            #ImageFrame {
+                border: 2px solid rgba(0, 160, 200, 0.6);
+                border-radius: 8px;
+                background: rgba(10, 12, 20, 0.9);
+            }
+        """)
+        frame_layout = QVBoxLayout(img_frame)
+        frame_layout.setContentsMargins(4, 4, 4, 4)
+        frame_layout.setSpacing(0)
+
+        img_title = QLabel("游戏界面")
+        img_title.setAlignment(Qt.AlignCenter)
+        img_title.setStyleSheet("color: rgba(0, 220, 180, 0.95); font-size: 22px; font-weight: bold; padding: 2px 0; background: transparent;")
+        frame_layout.addWidget(img_title)
+
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignCenter)
-        self.image_label.setMinimumSize(800, 600)
-        left_layout.addWidget(self.image_label)
+        self.image_label.setStyleSheet("background: transparent; border: none;")
+        frame_layout.addWidget(self.image_label, stretch=1)
+
+        left_layout.addWidget(img_frame)
         main_layout.addWidget(left_widget, stretch=3)
 
         # 右侧控制面板
@@ -73,7 +97,7 @@ class FishingROIWindow(QWidget):
 
         # 提示文字
         hint_label = QLabel("如果ROI区域不准确，需要+标题偏移30")
-        hint_label.setStyleSheet("color: #888888; font-size: 12px;")
+        hint_label.setStyleSheet("color: #888888; font-size: 14px;")
         offset_layout.addWidget(hint_label)
 
         right_layout.addWidget(offset_group)
@@ -82,6 +106,21 @@ class FishingROIWindow(QWidget):
         self.roi_label = QLabel(f"当前ROI区域: {self.get_current_roi()}")
         self.roi_label.setStyleSheet("color: #0ff; background: rgba(20,20,40,200); border: 1px solid #0ff; padding: 2px;")
         right_layout.addWidget(self.roi_label)
+
+        # 图例说明
+        legend_group = QGroupBox("图例")
+        legend_layout = QVBoxLayout(legend_group)
+        legend_style = "font-size: 14px; padding: 2px;"
+        l_roi = QLabel("■ 蓝色 = ROI 检测区域")
+        l_roi.setStyleSheet(f"color: #0066ff; {legend_style}")
+        l_a = QLabel("■ 红色 = 颜色A 匹配区域")
+        l_a.setStyleSheet(f"color: #ff0000; {legend_style}")
+        l_b = QLabel("■ 绿色 = 颜色B 匹配区域")
+        l_b.setStyleSheet(f"color: #00ff00; {legend_style}")
+        legend_layout.addWidget(l_roi)
+        legend_layout.addWidget(l_a)
+        legend_layout.addWidget(l_b)
+        right_layout.addWidget(legend_group)
 
         # 颜色A数据
         group_a = QGroupBox("颜色A (#2fd5b4 浅湖蓝绿)")
@@ -137,13 +176,13 @@ class FishingROIWindow(QWidget):
                 subcontrol-origin: margin;
                 left: 12px;
                 padding: 0 10px;
-                font-size: 18px;
+                font-size: 20px;
                 font-weight: 700;
             }
             QLabel {
                 color: rgba(180, 210, 240, 0.9);
-                font-size: 16px;
-                min-height: 28px;
+                font-size: 18px;
+                min-height: 32px;
             }
             QPushButton {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
@@ -216,11 +255,16 @@ class FishingROIWindow(QWidget):
         self.restart_core()
 
     def restart_core(self):
-        if self.roi_core:
-            self.roi_core.stop()
-        new_roi = self.get_current_roi()
-        self.roi_core = FishingROICore(new_roi)
-        self.roi_core.start()
+        try:
+            if self.roi_core:
+                self.roi_core.stop()
+                self.roi_core = None
+            new_roi = self.get_current_roi()
+            self.roi_core = FishingROICore(new_roi)
+            self.roi_core.start()
+        except Exception as e:
+            self.roi_core = None
+            print(f"重启检测核心失败: {e}")
 
     def init_core(self):
         try:
@@ -260,17 +304,25 @@ class FishingROIWindow(QWidget):
             return
         overlay = full_img.copy()
         rx1, ry1, rx2, ry2 = self.get_current_roi()
+
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        # cv2.putText(overlay, "Game", (10, 30), font, 0.8, (0, 0, 0), 4)
+        # cv2.putText(overlay, "Game", (10, 30), font, 0.8, (0, 255, 255), 2)
+
         cv2.rectangle(overlay, (rx1, ry1), (rx2, ry2), (255, 0, 0), 2)
+        cv2.putText(overlay, "ROI", (rx1, ry1 - 6), font, 0.6, (255, 0, 0), 2)
 
         if rect_a:
             ax1, ay1, ax2, ay2 = rect_a
             ax1 += rx1; ay1 += ry1; ax2 += rx1; ay2 += ry1
             cv2.rectangle(overlay, (ax1, ay1), (ax2, ay2), (0, 0, 255), 2)
+            cv2.putText(overlay, "A", (ax1, ay1 - 6), font, 0.6, (0, 0, 255), 2)
 
         if rect_b:
             bx1, by1, bx2, by2 = rect_b
             bx1 += rx1; by1 += ry1; bx2 += rx1; by2 += ry1
             cv2.rectangle(overlay, (bx1, by1), (bx2, by2), (0, 255, 0), 2)
+            cv2.putText(overlay, "B", (bx1, by1 - 6), font, 0.6, (0, 255, 0), 2)
 
         rgb = cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb.shape

@@ -49,6 +49,12 @@ class MainUI(QMainWindow):
         """初始化主窗口"""
         super().__init__()
         
+        # ========== 通过 DWM API 设置深色模式，防止窗口框架闪白 ==========
+        self._enable_dark_mode()
+        
+        # ========== 先应用主题，确保子控件创建时继承深色样式 ==========
+        self.apply_theme()
+        
         # ========== 窗口基础设置 ==========
         self.setWindowTitle("MintNTE")
         self.resize(1200, 900)
@@ -71,10 +77,21 @@ class MainUI(QMainWindow):
         
         # ========== 初始化全局快捷键 ==========
         self._init_shortcuts()
-        
-        # ========== 应用主题样式 ==========
-        self.apply_theme()
     
+    def _enable_dark_mode(self):
+        """通过 Windows DWM API 设置窗口深色模式，防止 OS 层面闪白"""
+        try:
+            hwnd = int(self.winId())
+            dwmapi = ctypes.windll.dwmapi
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            value = ctypes.c_int(1)
+            dwmapi.DwmSetWindowAttribute(
+                hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                ctypes.byref(value), ctypes.sizeof(value)
+            )
+        except Exception:
+            pass
+
     def _set_window_icon(self):
         """设置窗口图标"""
         icon_path = os.path.join(BASE_DIR, "Image", "logo", "titlelogo.ico")

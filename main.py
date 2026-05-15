@@ -81,6 +81,15 @@ app = QApplication(sys.argv)
 
 from UI.MainUI import MainUI
 main_window = MainUI()
+
+# grab() 强制 Qt 完成一次完整绘制（布局+样式+像素），窗口仍不可见
+main_window.grab()
+
+# 此时 Qt 已缓存完整绘制结果，show() 时直接使用缓存，不会闪白
+screen = app.primaryScreen().availableGeometry()
+x = (screen.width() - main_window.width()) // 2
+y = (screen.height() - main_window.height()) // 2
+main_window.move(x, y)
 main_window.show()
 
 info("主界面已显示")
