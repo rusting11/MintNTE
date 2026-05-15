@@ -13,11 +13,16 @@ def setup_logging(log_file="nte_bohe.log", console_level=logging.INFO, file_leve
     logger = logging.getLogger("NTE_Bohe")
     logger.setLevel(logging.DEBUG)
 
-    console = logging.StreamHandler(sys.stdout)
-    console.setLevel(console_level)
-    console_format = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S')
-    console.setFormatter(console_format)
-    logger.addHandler(console)
+    # 仅在有控制台时创建 StreamHandler
+    try:
+        console = logging.StreamHandler(sys.stdout)
+        console.setLevel(console_level)
+        console_format = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S')
+        console.setFormatter(console_format)
+        logger.addHandler(console)
+    except Exception:
+        # pythonw.exe 环境下没有控制台，跳过
+        pass
 
     file_handler = RotatingFileHandler(log_file, maxBytes=2*1024*1024, backupCount=3, encoding='utf-8')
     file_handler.setLevel(file_level)

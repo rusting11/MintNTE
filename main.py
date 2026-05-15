@@ -11,7 +11,6 @@ def detach_console():
     2. ShowWindow(GetConsoleWindow(), SW_HIDE)  兜底隐藏
     """
     try:
-        # 彻底解除进程与主控制台的绑定
         ctypes.windll.kernel32.FreeConsole()
     except Exception:
         pass
@@ -27,11 +26,11 @@ detach_console()
 
 # ===== 第二步：抑制 Windows 系统错误对话框 =====
 try:
-    ctypes.windll.kernel32.SetErrorMode(0x0001 | 0x0002)  # SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX
+    ctypes.windll.kernel32.SetErrorMode(0x0001 | 0x0002)
 except Exception:
     pass
 
-# ===== 第三步：提权判断（提权后的新进程也不再显示控制台） =====
+# ===== 第三步：提权判断 =====
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
@@ -42,12 +41,31 @@ def is_admin():
     except Exception:
         return False
 
-if not is_admin():
-    # 用 SW_HIDE (1) 隐藏提权时弹出的命令行窗口
-    ctypes.windll.shell32.ShellExecuteW(
-        None, "runas", sys.executable, f'"{os.path.abspath(__file__)}"', PROJECT_ROOT, 1  # 1 = SW_HIDE
+# 检查是否已经是提权后的进程
+is_elevated = "--elevated" in sys.argv
+
+if not is_elevated and not is_admin():
+    # 需要提权，使用 pythonw.exe 启动以避免控制台窗口
+    pythonw_exe = sys.executable.replace("python.exe", "pythonw.exe")
+    if not os.path.exists(pythonw_exe):
+        pythonw_exe = sys.executable
+    
+    # 构建命令：添加 --elevated 参数标识已提权
+    cmd = f'"{pythonw_exe}" "{os.path.abspath(__file__)}" --elevated'
+    
+    # 使用 SW_SHOWNORMAL 确保提权对话框能显示
+    result = ctypes.windll.shell32.ShellExecuteW(
+        None, "runas", pythonw_exe, f'"{os.path.abspath(__file__)}" --elevated', PROJECT_ROOT, 1  # 1 = SW_SHOWNORMAL
     )
-    sys.exit()
+    
+    # ShellExecuteW 返回值 > 32 表示成功
+    if result <= 32:
+        # 提权失败（用户取消或其他错误）
+        # 在非管理员模式下尝试继续运行
+        pass
+    else:
+        # 提权成功，当前进程退出
+        sys.exit()
 
 # 提权后再次分离（新进程也可能携带控制台）
 detach_console()
