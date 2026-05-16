@@ -174,6 +174,12 @@ QPushButton:pressed {
         stop:1 rgba(0, 140, 120, 0.45));
 }
 
+QPushButton:disabled {
+    background: rgba(60, 60, 70, 0.35);
+    color: rgba(140, 140, 155, 0.55);
+    border: 1px solid rgba(80, 80, 95, 0.25);
+}
+
 /* 操作按钮（ActionButton） */
 QPushButton#ActionButton {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
@@ -200,6 +206,12 @@ QPushButton#ActionButton:pressed {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
         stop:0 rgba(0, 140, 180, 0.5), 
         stop:1 rgba(0, 160, 130, 0.4));
+}
+
+QPushButton#ActionButton:disabled {
+    background: rgba(60, 60, 70, 0.4);
+    color: rgba(140, 140, 155, 0.6);
+    border: 1px solid rgba(80, 80, 95, 0.3);
 }
 """
 
@@ -379,6 +391,7 @@ QLabel#InfoGroupTitle {
     padding-bottom: 4px;
     border-bottom: 1px solid rgba(0, 160, 200, 0.2);
     margin-bottom: 4px;
+    font-size: 22px;
 }
 
 /* 预览标签 */
