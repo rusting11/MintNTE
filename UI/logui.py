@@ -24,6 +24,8 @@ def setup_logging(log_file="nte_bohe.log", console_level=logging.INFO, file_leve
         # pythonw.exe 环境下没有控制台，跳过
         pass
 
+    with open(log_file, "w", encoding="utf-8"):
+        pass
     file_handler = RotatingFileHandler(log_file, maxBytes=2*1024*1024, backupCount=3, encoding='utf-8')
     file_handler.setLevel(file_level)
     file_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')

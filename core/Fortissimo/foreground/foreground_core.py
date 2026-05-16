@@ -1,7 +1,9 @@
-import threading, time, cv2, numpy as np
+import threading, time, ctypes, cv2, numpy as np
 from collections import deque
-import dxcam, win32gui, pydirectinput
+import dxcam, win32gui, win32con, pydirectinput
 from UI import logui
+
+
 
 MIN_TRIGGER_PIXELS = None
 JUDGE_RADIUS = None
@@ -21,7 +23,7 @@ def build_hsv_ranges(bgr_list, h_ext=20, sv_ext=40):
     for bgr in bgr_list:
         col = np.uint8([[bgr]])
         hsv = cv2.cvtColor(col, cv2.COLOR_BGR2HSV)[0][0]
-        h, s, v = hsv
+        h, s, v = int(hsv[0]), int(hsv[1]), int(hsv[2])
         if v < 30:
             h_low = max(0, h-10); h_high = min(179, h+10)
             s_low = max(0, s-25); s_high = min(255, s+25)
@@ -72,10 +74,7 @@ class ForegroundFinal:
         self.det_thread = None
 
     def start(self):
-        rect = win32gui.GetClientRect(self.hwnd)
-        pt = win32gui.ClientToScreen(self.hwnd, (0, 0))
-        self.region = (pt[0], pt[1], pt[0]+rect[2], pt[1]+rect[3])
-        self.camera = dxcam.create(output_color="BGR", region=self.region)
+        self.camera = dxcam.create(output_color="BGR")
         self.camera.start(target_fps=TARGET_FPS, video_mode=True)
         time.sleep(0.5)
         self.cap_thread = threading.Thread(target=self._capture_loop, daemon=True)
@@ -102,7 +101,10 @@ class ForegroundFinal:
             if self.last_full_frame is None: return None
             track = next((t for t in self.tracks if t['name'] == track_name), None)
             if not track: return None
-            cx, cy = track['circle_base']
+            pt = win32gui.ClientToScreen(self.hwnd, (0, 0))
+            win_x, win_y = pt[0], pt[1]
+            cx_base, cy_base = track['circle_base']
+            cx, cy = cx_base + win_x, cy_base + win_y
             r = JUDGE_RADIUS.get(track_name, 15)
             cy += JUDGE_Y_OFFSET.get(track_name, 0) if JUDGE_Y_OFFSET else 0
             half = size//2
@@ -135,15 +137,22 @@ class ForegroundFinal:
             if frame is None: continue
 
             t0 = time.perf_counter(); now = t0
+
+            pt = win32gui.ClientToScreen(self.hwnd, (0, 0))
+            win_x, win_y = pt[0], pt[1]
+
             for i, track in enumerate(self.tracks):
                 track_name = track['name']
                 cx_base, cy_base = track['circle_base']
+                cx_screen = cx_base + win_x
+                cy_screen = cy_base + win_y
                 r = JUDGE_RADIUS.get(track_name, 15)
-                cy = cy_base + (JUDGE_Y_OFFSET.get(track_name,0) if JUDGE_Y_OFFSET else 0)
+                cy_screen += JUDGE_Y_OFFSET.get(track_name, 0) if JUDGE_Y_OFFSET else 0
 
-                x1,y1 = cx_base-r, cy-r
-                x2,y2 = cx_base+r, cy+r
-                if x1<0 or y1<0 or x2>frame.shape[1] or y2>frame.shape[0]: continue
+                x1,y1 = cx_screen-r, cy_screen-r
+                x2,y2 = cx_screen+r, cy_screen+r
+                if x1<0 or y1<0 or x2>frame.shape[1] or y2>frame.shape[0]:
+                    continue
 
                 roi_bgr = frame[y1:y2, x1:x2]
                 mask = np.zeros((2*r,2*r), dtype=np.uint8)
@@ -160,11 +169,12 @@ class ForegroundFinal:
                     judge_cnt = int(np.count_nonzero(matched))
 
                 self.color_counts[i] = judge_cnt
-                is_active = judge_cnt >= MIN_TRIGGER_PIXELS.get(track_name,3)
+                threshold = MIN_TRIGGER_PIXELS.get(track_name,3)
+                is_active = judge_cnt >= threshold
                 cooldown = COOLDOWN_MS.get(track_name,20)/1000.0
                 in_cooldown = (now - self.last_trigger_time[i]) < cooldown
 
-                if self.prev_judge_active[i] and judge_cnt < MIN_TRIGGER_PIXELS.get(track_name,3):
+                if self.prev_judge_active[i] and judge_cnt < threshold:
                     if not in_cooldown: self.prev_judge_active[i] = False
 
                 jump_threshold = 5 if track_name in ('J','F') else 4 if track_name=='K' else 8
@@ -193,4 +203,14 @@ class ForegroundFinal:
             time.sleep(0.001)
 
     def _press_async(self, key, idx):
-        pydirectinput.press(key)
+        vk = ord(key.upper())
+        scan = ctypes.windll.user32.MapVirtualKeyW(vk, 0)
+        lparam_down = 1 | (scan << 16)
+        lparam_up = 1 | (scan << 16) | (1 << 30) | (1 << 31)
+        try:
+            win32gui.SendMessage(self.hwnd, 0x0006, 1, 0)
+            win32gui.PostMessage(self.hwnd, win32con.WM_KEYDOWN, vk, lparam_down)
+            time.sleep(0.05)
+            win32gui.PostMessage(self.hwnd, win32con.WM_KEYUP, vk, lparam_up)
+        except Exception as e:
+            pydirectinput.press(key)

@@ -72,10 +72,7 @@ class ForegroundFinal:
         self.det_thread = None
 
     def start(self):
-        rect = win32gui.GetClientRect(self.hwnd)
-        pt = win32gui.ClientToScreen(self.hwnd, (0, 0))
-        self.region = (pt[0], pt[1], pt[0]+rect[2], pt[1]+rect[3])
-        self.camera = dxcam.create(output_color="BGR", region=self.region)
+        self.camera = dxcam.create(output_color="BGR")
         self.camera.start(target_fps=TARGET_FPS, video_mode=True)
         time.sleep(0.5)
         self.cap_thread = threading.Thread(target=self._capture_loop, daemon=True)
@@ -102,7 +99,12 @@ class ForegroundFinal:
             if self.last_full_frame is None: return None
             track = next((t for t in self.tracks if t['name'] == track_name), None)
             if not track: return None
-            cx, cy = track['circle_base']
+            
+            pt = win32gui.ClientToScreen(self.hwnd, (0, 0))
+            win_x, win_y = pt[0], pt[1]
+            
+            cx_base, cy_base = track['circle_base']
+            cx, cy = cx_base + win_x, cy_base + win_y
             r = JUDGE_RADIUS.get(track_name, 15)
             cy += JUDGE_Y_OFFSET.get(track_name, 0) if JUDGE_Y_OFFSET else 0
             half = size//2
@@ -134,15 +136,20 @@ class ForegroundFinal:
                 if self.frame_queue: frame = self.frame_queue.popleft()
             if frame is None: continue
 
+            pt = win32gui.ClientToScreen(self.hwnd, (0, 0))
+            win_x, win_y = pt[0], pt[1]
+
             t0 = time.perf_counter(); now = t0
             for i, track in enumerate(self.tracks):
                 track_name = track['name']
                 cx_base, cy_base = track['circle_base']
+                cx_screen = cx_base + win_x
+                cy_screen = cy_base + win_y
                 r = JUDGE_RADIUS.get(track_name, 15)
-                cy = cy_base + (JUDGE_Y_OFFSET.get(track_name,0) if JUDGE_Y_OFFSET else 0)
+                cy_screen += JUDGE_Y_OFFSET.get(track_name, 0) if JUDGE_Y_OFFSET else 0
 
-                x1,y1 = cx_base-r, cy-r
-                x2,y2 = cx_base+r, cy+r
+                x1,y1 = cx_screen-r, cy_screen-r
+                x2,y2 = cx_screen+r, cy_screen+r
                 if x1<0 or y1<0 or x2>frame.shape[1] or y2>frame.shape[0]: continue
 
                 roi_bgr = frame[y1:y2, x1:x2]
